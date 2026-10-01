@@ -9,5 +9,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker compose --env-file .env.example config --quiet
+      - run: docker compose -f docker-compose.yml -f docker-compose.local.yml --env-file .env.local.example config --quiet
       - run: shellcheck scripts/*.sh
       - run: docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" -e NETRA_DOMAIN=example.com caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
+      - run: docker run --rm -v "$PWD/Caddyfile.local:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile

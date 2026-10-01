@@ -1,0 +1,19 @@
+# Local / LAN: plain HTTP on every host name (localhost, the Mac's IP or <name>.local).
+:80 {
+	encode zstd gzip
+	request_body {
+		max_size 40MB
+	}
+	handle /api/* {
+		reverse_proxy api:8080
+	}
+	handle /healthz {
+		reverse_proxy api:8080
+	}
+	handle /grafana* {
+		reverse_proxy grafana:3000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}

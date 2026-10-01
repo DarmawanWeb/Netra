@@ -14,7 +14,8 @@ in two submodules.
 | `docker-compose.yml` | the whole stack |
 | `Caddyfile` | HTTPS, `/api` → API, `/grafana` → Grafana, rest → dashboard |
 | `monitoring/` | Prometheus scrape config, Grafana datasources (Prometheus, TimescaleDB) and dashboard |
-| `scripts/deploy.sh` | pull, update submodules, pull images, restart, pull the AI model |
+| `scripts/deploy.sh` | server: pull, update submodules, pull images, restart, pull the AI model |
+| `docker-compose.local.yml`, `Caddyfile.local`, `.env.local.example`, `scripts/local.sh` | running on a Mac (LOCAL.md) |
 
 ```
 internet ─443─> caddy ─┬─ /api ──> api ──┬─> TimescaleDB (state, telemetry, audit)
@@ -25,7 +26,12 @@ internet ─443─> caddy ─┬─ /api ──> api ──┬─> TimescaleDB (
 robots ──WebSocket/HTTPS──> /api/v1/robot/*
 ```
 
-## Deploy
+## Run on a Mac (robots over Wi-Fi)
+
+See **[LOCAL.md](LOCAL.md)**: `scripts/local.sh setup && scripts/local.sh up`, then
+`scripts/local.sh robot <id>` prints the robot's connection settings.
+
+## Deploy on a server
 
 ```bash
 git clone --recursive git@github.com:DarmawanRobotics/netra-fleet.git && cd netra-fleet

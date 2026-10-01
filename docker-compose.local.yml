@@ -1,0 +1,31 @@
+# Laptop / macOS override, enabled through COMPOSE_FILE in .env (scripts/local.sh setup writes it).
+# Plain HTTP on port 80 for the browser and the robots on the same Wi-Fi; images are built locally;
+# Ollama runs natively on macOS so the vision model uses the Apple GPU (containers cannot).
+services:
+  api:
+    pull_policy: build
+    environment:
+      NETRA_PUBLIC_URL: ${NETRA_PUBLIC_URL:-http://localhost}
+      NETRA_ALLOWED_ORIGIN: "*"
+
+  ai:
+    pull_policy: build
+    environment:
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      NETRA_AI_TIMEOUT: "120"
+    depends_on: !reset []
+
+  ollama:
+    profiles: [server] # not started locally
+
+  web:
+    pull_policy: build
+
+  caddy:
+    ports: !override ["80:80"]
+    volumes:
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
+
+  grafana:
+    environment:
+      GF_SERVER_ROOT_URL: ${NETRA_PUBLIC_URL:-http://localhost}/grafana/
