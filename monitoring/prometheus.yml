@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 15s
+scrape_configs:
+  - job_name: netra-api
+    static_configs: [{ targets: ["api:8080"] }]
+  - job_name: netra-ai
+    static_configs: [{ targets: ["ai:8090"] }]
+  - job_name: prometheus
+    static_configs: [{ targets: ["localhost:9090"] }]

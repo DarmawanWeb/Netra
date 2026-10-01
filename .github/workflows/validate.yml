@@ -1,0 +1,13 @@
+name: validate
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose --env-file .env.example config --quiet
+      - run: shellcheck scripts/*.sh
+      - run: docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" -e NETRA_DOMAIN=example.com caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile

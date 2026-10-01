@@ -1,0 +1,19 @@
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    url: http://prometheus:9090
+    isDefault: true
+  - name: TimescaleDB
+    uid: timescale
+    type: grafana-postgresql-datasource
+    url: db:5432
+    user: netra
+    secureJsonData:
+      password: $POSTGRES_PASSWORD
+    jsonData:
+      database: netra
+      sslmode: disable
+      timescaledb: true
+      postgresVersion: 1600

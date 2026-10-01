@@ -1,0 +1,133 @@
+name: netra-fleet
+
+x-restart: &restart
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+services:
+  db:
+    <<: *restart
+    image: timescale/timescaledb:2.17.2-pg16
+    environment:
+      POSTGRES_DB: netra
+      POSTGRES_USER: netra
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes: [db-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netra -d netra"]
+      interval: 5s
+      retries: 30
+
+  nats:
+    <<: *restart
+    image: nats:2.10-alpine
+    command: ["--jetstream", "--store_dir", "/data", "--http_port", "8222"]
+    volumes: [nats-data:/data]
+
+  api:
+    <<: *restart
+    image: ${REGISTRY:-ghcr.io/darmawanrobotics}/netra-api:${TAG:-main}
+    build: ./be
+    env_file: .env
+    environment:
+      NETRA_DATABASE_URL: postgres://netra:${POSTGRES_PASSWORD}@db:5432/netra?sslmode=disable
+      NETRA_DATA_DIR: /data
+      NETRA_PUBLIC_URL: https://${NETRA_DOMAIN}
+      NETRA_ALLOWED_ORIGIN: https://${NETRA_DOMAIN}
+      NETRA_NATS_URL: nats://nats:4222
+      NETRA_FINAL_DETECTOR_URL: http://ai:8090/detect
+    volumes: [api-data:/data]
+    depends_on:
+      db: { condition: service_healthy }
+      nats: { condition: service_started }
+
+  ai:
+    <<: *restart
+    image: ${REGISTRY:-ghcr.io/darmawanrobotics}/netra-ai:${TAG:-main}
+    build: ./be/ai
+    environment:
+      OLLAMA_URL: http://ollama:11434
+      NETRA_AI_MODEL: ${NETRA_AI_MODEL:-qwen2.5vl:7b}
+    depends_on: [ollama]
+
+  ollama:
+    <<: *restart
+    image: ollama/ollama:latest
+    volumes: [ollama-data:/root/.ollama]
+    # GPU: uncomment on a host with the NVIDIA container toolkit
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+
+  web:
+    <<: *restart
+    image: ${REGISTRY:-ghcr.io/darmawanrobotics}/netra-web:${TAG:-main}
+    build: ./fe
+    depends_on: [api]
+
+  caddy:
+    <<: *restart
+    image: caddy:2-alpine
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      NETRA_DOMAIN: ${NETRA_DOMAIN:?set NETRA_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [api, web, grafana]
+
+  prometheus:
+    <<: *restart
+    image: prom/prometheus:v2.55.1
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=30d"]
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+
+  grafana:
+    <<: *restart
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_SERVER_ROOT_URL: https://${NETRA_DOMAIN}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on: [prometheus, db]
+
+  backup:
+    <<: *restart
+    image: timescale/timescaledb:2.17.2-pg16
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    volumes: [./backups:/backups]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          pg_dump -h db -U netra -d netra -Fc -f /backups/netra-$$(date +%F).dump && \
+          find /backups -name 'netra-*.dump' -mtime +$$KEEP_DAYS -delete
+          sleep 86400
+        done
+    depends_on:
+      db: { condition: service_healthy }
+
+volumes:
+  db-data:
+  nats-data:
+  api-data:
+  ollama-data:
+  caddy-data:
+  caddy-config:
+  prometheus-data:
+  grafana-data:
