@@ -50,6 +50,7 @@ services:
     environment:
       OLLAMA_URL: http://ollama:11434
       NETRA_AI_MODEL: ${NETRA_AI_MODEL:-qwen2.5vl:7b}
+      NETRA_AI_LANGUAGE: ${NETRA_AI_LANGUAGE:-English}
     depends_on: [ollama]
 
   ollama:
