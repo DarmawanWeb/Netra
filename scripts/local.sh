@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# NETRA Fleet on a Mac — robots connect over the same Wi-Fi.
+# NETRA Fleet on a Mac — robots connect over the same network (Wi-Fi, hotspot or cable).
 #
-#   scripts/local.sh setup            check tools, create .env, start Ollama, pull the AI model
-#   scripts/local.sh up               build and start the stack, print the addresses
+#   scripts/local.sh setup             check tools, create .env, start Ollama, pull the AI model
+#   scripts/local.sh up                build and start the stack, print the addresses
 #   scripts/local.sh robot <id> [name] register a robot and print its /etc/pashupati/pashupati.env
+#   scripts/local.sh lan               addresses robots and phones can use on each network
 #   scripts/local.sh status | logs [service] | doctor | awake | down | reset
 #
 # Works with the bash 3.2 that ships with macOS.
@@ -13,7 +14,6 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 ENV_FILE=.env
 TEMPLATE=.env.local.example
 AWAKE_PID=.awake.pid
-BASE_URL=http://localhost
 
 if [[ -t 1 ]]; then
     B=$'\033[1m' G=$'\033[32m' Y=$'\033[33m' R=$'\033[31m' D=$'\033[2m' N=$'\033[0m'
@@ -30,10 +30,42 @@ die() {
 title() { printf '\n%s%s%s\n' "$B" "$*" "$N"; }
 
 envget() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- || true; }
-lan_ip() { ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo ""; }
 mdns_name() { echo "$(scutil --get LocalHostName 2>/dev/null || hostname -s).local"; }
 random() { openssl rand -base64 64 | tr -dc 'A-Za-z0-9' | cut -c "1-${1:-24}"; }
 ram_gb() { echo $(($(sysctl -n hw.memsize) / 1073741824)); }
+
+# Port of the dashboard and robot API on this computer (NETRA_LAN_PORT, default 80).
+lan_port() {
+    local port
+    port=$(envget NETRA_LAN_PORT)
+    echo "${port:-80}"
+}
+port_suffix() { [[ $(lan_port) == 80 ]] || echo ":$(lan_port)"; }
+BASE_URL="http://localhost$(port_suffix)"
+
+# "interface address" for every IPv4 address a robot could reach (no loopback or VPN tunnels).
+lan_addrs() {
+    ifconfig 2>/dev/null | awk '
+        /^[a-z]/ { iface = $1; sub(/:$/, "", iface) }
+        $1 == "inet" && iface !~ /^(lo|utun|gif|stf|awdl|llw|anpi|ipsec|ppp)/ { print iface, $2 }'
+}
+
+# Name of an interface as System Settings shows it: "Wi-Fi", "USB 10/100/1000 LAN", ...
+iface_label() {
+    local name=''
+    case $1 in
+    bridge1*) name='Internet Sharing / VM network' ;;
+    *)
+        name=$(networksetup -listallhardwareports 2>/dev/null | awk -v dev="$1" '
+            /^Hardware Port:/ { sub(/^Hardware Port: /, ""); port = $0 }
+            /^Device:/ && $2 == dev { print port; exit }') || true
+        ;;
+    esac
+    echo "${name:-$1}"
+}
+
+# Wi-Fi network name of an interface; empty when unknown (macOS may hide it).
+wifi_name() { ipconfig getsummary "$1" 2>/dev/null | awk -F ' SSID : ' '/ SSID : / { print $2; exit }' || true; }
 
 compose_ok() {
     local v major minor
@@ -134,13 +166,43 @@ cmd_up() {
 }
 
 cmd_addresses() {
-    local ip
-    ip=$(lan_ip)
     title "NETRA Fleet is running"
     printf '  Dashboard   %s%s%s   (admin / see NETRA_ADMIN_PASSWORD in .env)\n' "$B" "$BASE_URL" "$N"
     printf '  Grafana     %s/grafana   (admin / GRAFANA_PASSWORD)\n' "$BASE_URL"
-    printf '  On Wi-Fi    %s  or  http://%s\n' "$(envget NETRA_PUBLIC_URL)" "${ip:-<no Wi-Fi IP>}"
+    print_lan
     printf '\n  Add a robot: %sscripts/local.sh robot l1w-01 "L1W 01"%s\n' "$B" "$N"
+}
+
+# The addresses of this computer on every network it is connected to, and whether NETRA answers there.
+print_lan() {
+    local iface ip label ssid url public found=''
+    title "Robots and phones on the same network use"
+    while read -r iface ip; do
+        [[ -n $ip ]] || continue
+        found=1
+        label=$(iface_label "$iface")
+        ssid=$(wifi_name "$iface")
+        [[ -n $ssid ]] && label="$label \"$ssid\""
+        url="http://$ip$(port_suffix)"
+        if curl -fsS --max-time 2 "$url/healthz" >/dev/null 2>&1; then
+            printf '  %s%-28s%s %s   %s(%s)%s\n' "$B" "$url" "$N" "$label" "$D" "$iface" "$N"
+        else
+            printf '  %-28s %s   %s(%s, NETRA does not answer here)%s\n' "$url" "$label" "$D" "$iface" "$N"
+        fi
+    done < <(lan_addrs)
+    [[ -n $found ]] || warn "no network connection: join the robot's Wi-Fi, a hotspot or plug in a cable"
+    printf '  %-28s %s\n' "http://$(mdns_name)$(port_suffix)" "any of them, if the robot resolves .local names"
+    public=$(envget NETRA_PUBLIC_URL)
+    if [[ $public == https://* ]]; then
+        printf '  %-28s %s\n' "$public" "through the internet (Cloudflare Tunnel)"
+    fi
+}
+
+cmd_lan() {
+    need_env
+    print_lan
+    printf '\n  On the robot: %sCC_URL=<one of these addresses>%s in /etc/pashupati/pashupati.env, then\n' "$B" "$N"
+    printf '  sudo systemctl restart pashupati. Check from the robot first: curl <address>/healthz\n'
 }
 
 cmd_down() {
@@ -151,7 +213,7 @@ cmd_down() {
 cmd_status() {
     need_env
     docker compose ps --format 'table {{.Service}}\t{{.State}}\t{{.Status}}'
-    curl -fsS --max-time 3 "$BASE_URL/healthz" >/dev/null 2>&1 && ok "API healthy" || bad "API not reachable on $BASE_URL"
+    if curl -fsS --max-time 3 "$BASE_URL/healthz" >/dev/null 2>&1; then ok "API healthy"; else bad "API not reachable on $BASE_URL"; fi
 }
 
 cmd_logs() { docker compose logs -f --tail=150 "$@"; }
@@ -161,13 +223,13 @@ api_login() {
     user=$(envget NETRA_ADMIN_USER)
     pass=$(envget NETRA_ADMIN_PASSWORD)
     reply=$(curl -fsS -X POST "$BASE_URL/api/v1/auth/login" -H 'Content-Type: application/json' \
-        -d "{\"username\":\"${user:-admin}\",\"password\":\"$pass\"}") || die "login failed (admin password changed in the dashboard?)"
+        -d "{\"username\":\"${user:-admin}\",\"password\":\"$pass\"}") || die "login failed (is the stack up? scripts/local.sh status)"
     echo "$reply" | sed -E 's/.*"token":"([^"]+)".*/\1/'
 }
 
 cmd_robot() {
     need_env
-    local id=${1:-} name=${2:-${1:-}} session reply token code ip url
+    local id=${1:-} name=${2:-${1:-}} session reply token code url
     [[ -n $id ]] || die "usage: scripts/local.sh robot <id> [name]   e.g. robot l1w-01 \"L1W 01\""
     session=$(api_login)
     reply=$(curl -sS -w '\n%{http_code}' -X POST "$BASE_URL/api/v1/robots" -H "Authorization: Bearer $session" \
@@ -182,28 +244,34 @@ cmd_robot() {
     fi
     [[ $code == 200 || $code == 201 ]] || die "API answered $code: $(echo "$reply" | head -1)"
     token=$(echo "$reply" | head -1 | sed -E 's/.*"token":"([^"]+)".*/\1/')
-    ip=$(lan_ip)
     url=$(envget NETRA_PUBLIC_URL)
     title "Robot $id registered"
     printf '  On the robot, set these in %s/etc/pashupati/pashupati.env%s and restart:\n\n' "$B" "$N"
-    printf '    CC_URL=%s\n    CC_TOKEN=%s\n\n' "$url" "$token"
-    printf '  %sIf the robot cannot resolve .local names use CC_URL=http://%s (reserve that IP in the router).%s\n' "$D" "${ip:-<Mac IP>}" "$N"
-    printf '  Then: sudo systemctl restart pashupati  — the robot shows up online on the map.\n'
+    printf '    ROBOT_ID=%s\n    CC_URL=%s\n    CC_TOKEN=%s\n' "$id" "${url:-$BASE_URL}" "$token"
+    print_lan
+    printf '\n  %sCC_URL can be any address above that the robot reaches (curl <address>/healthz on the robot).%s\n' "$D" "$N"
+    printf '  Then: sudo systemctl restart pashupati  — the robot shows up online on the dashboard.\n'
 }
+
+# ------------------------------------------------------------------------------------------ doctor
 
 cmd_doctor() {
     title "Docker"
-    docker info >/dev/null 2>&1 && ok "Docker Desktop running" || bad "Docker Desktop not running"
-    compose_ok && ok "Compose $(docker compose version --short)" || bad "Compose 2.24+ required"
+    if docker info >/dev/null 2>&1; then ok "Docker Desktop running"; else bad "Docker Desktop not running"; fi
+    if compose_ok; then ok "Compose $(docker compose version --short)"; else bad "Compose 2.24+ required"; fi
     local mem
     mem=$(docker info --format '{{.MemTotal}}' 2>/dev/null || echo 0)
     if [[ $((mem / 1073741824)) -ge 4 ]]; then ok "Docker memory $((mem / 1073741824)) GB"; else warn "Docker memory below 4 GB (Settings → Resources)"; fi
 
     title "AI"
-    ollama_up && ok "Ollama on the Mac" || bad "Ollama not running (brew services start ollama)"
+    if ollama_up; then ok "Ollama on the Mac"; else bad "Ollama not running (brew services start ollama)"; fi
     local model
     model=$(envget NETRA_AI_MODEL)
-    ollama list 2>/dev/null | awk '{print $1}' | grep -q "^$model" && ok "model $model" || bad "model $model missing (ollama pull $model)"
+    if ollama list 2>/dev/null | awk '{print $1}' | grep -q "^$model"; then
+        ok "model $model"
+    else
+        bad "model $model missing (ollama pull $model)"
+    fi
     if docker compose exec -T ai python -c "import urllib.request;urllib.request.urlopen('http://host.docker.internal:11434/api/tags',timeout=3)" >/dev/null 2>&1; then
         ok "AI container reaches Ollama"
     else
@@ -211,20 +279,38 @@ cmd_doctor() {
     fi
 
     title "Stack"
-    curl -fsS --max-time 3 "$BASE_URL/healthz" >/dev/null 2>&1 && ok "API healthy" || bad "API not reachable (scripts/local.sh up)"
+    if curl -fsS --max-time 3 "$BASE_URL/healthz" >/dev/null 2>&1; then
+        ok "API healthy on $BASE_URL"
+    else
+        bad "API not reachable (scripts/local.sh up)"
+    fi
 
-    title "Network (robots on the same Wi-Fi)"
-    local ip fw
-    ip=$(lan_ip)
-    [[ -n $ip ]] && ok "Mac Wi-Fi IP $ip, name $(mdns_name)" || bad "no Wi-Fi IP (connect to the robot network)"
-    [[ -n $ip ]] && curl -fsS --max-time 3 "http://$ip/healthz" >/dev/null 2>&1 && ok "reachable on http://$ip" || warn "not reachable on the LAN IP yet"
+    title "Network (robots on the same network)"
+    local iface ip any='' fw
+    while read -r iface ip; do
+        [[ -n $ip ]] || continue
+        any=1
+        if curl -fsS --max-time 3 "http://$ip$(port_suffix)/healthz" >/dev/null 2>&1; then
+            ok "reachable on http://$ip$(port_suffix) ($(iface_label "$iface"))"
+        else
+            warn "not reachable on http://$ip$(port_suffix) ($(iface_label "$iface"))"
+        fi
+    done < <(lan_addrs)
+    [[ -n $any ]] || bad "no network connection (join the robot's Wi-Fi, a hotspot or plug in a cable)"
+    if [[ $(envget NETRA_LAN_BIND) == 127.0.0.1 ]]; then
+        warn "NETRA_LAN_BIND=127.0.0.1: only this computer and the tunnel reach NETRA"
+    fi
     fw=$(/usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate 2>/dev/null || true)
     if echo "$fw" | grep -qi enabled; then
         warn "macOS firewall on: allow incoming connections for Docker when asked"
     else
         ok "macOS firewall off"
     fi
-    [[ -f $AWAKE_PID ]] && kill -0 "$(cat $AWAKE_PID)" 2>/dev/null && ok "kept awake" || warn "the Mac may sleep: scripts/local.sh awake"
+    if [[ -f $AWAKE_PID ]] && kill -0 "$(cat $AWAKE_PID)" 2>/dev/null; then
+        ok "kept awake"
+    else
+        warn "the Mac may sleep: scripts/local.sh awake"
+    fi
 }
 
 cmd_awake() {
@@ -259,8 +345,9 @@ down) cmd_down ;;
 status) cmd_status ;;
 logs) shift && cmd_logs "$@" ;;
 robot) shift && cmd_robot "$@" ;;
+lan) cmd_lan ;;
 doctor) cmd_doctor ;;
 awake) cmd_awake ;;
 reset) cmd_reset ;;
-*) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' ;;
+*) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' ;;
 esac
