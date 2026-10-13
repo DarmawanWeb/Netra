@@ -3,6 +3,7 @@
 #
 #   scripts/local.sh setup             check tools, create .env, start Ollama, pull the AI model
 #   scripts/local.sh up                build and start the stack, print the addresses
+#   scripts/local.sh start             start without rebuilding (no internet needed, demo day)
 #   scripts/local.sh robot <id> [name] register a robot and print its /etc/pashupati/pashupati.env
 #   scripts/local.sh lan               addresses robots and phones can use on each network
 #   scripts/local.sh export [file]     all data (database, photos, floor plans) into one file
@@ -173,6 +174,17 @@ cmd_up() {
     start_ollama || warn "Ollama is not running: final detection falls back to the robot result"
     title "Starting NETRA Fleet (first build takes a few minutes)"
     docker compose up -d --build --remove-orphans
+    wait_healthy || die "API not healthy: scripts/local.sh logs api"
+    cmd_addresses
+}
+
+# Start the images built before: nothing is downloaded or built, so it works without internet.
+cmd_start() {
+    need_env
+    docker info >/dev/null 2>&1 || die "Docker Desktop is not running: open -a Docker"
+    start_ollama || warn "Ollama is not running: final detection falls back to the robot result"
+    title "Starting NETRA Fleet (no rebuild)"
+    docker compose up -d --no-build --remove-orphans || die "images missing: run scripts/local.sh up once with internet"
     wait_healthy || die "API not healthy: scripts/local.sh logs api"
     cmd_addresses
 }
@@ -464,6 +476,7 @@ cmd_reset() {
 case "${1:-help}" in
 setup) cmd_setup ;;
 up) cmd_up ;;
+start) cmd_start ;;
 down) cmd_down ;;
 status) cmd_status ;;
 logs) shift && cmd_logs "$@" ;;
@@ -474,5 +487,5 @@ import) shift && cmd_import "$@" ;;
 doctor) cmd_doctor ;;
 awake) cmd_awake ;;
 reset) cmd_reset ;;
-*) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' ;;
+*) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//' ;;
 esac

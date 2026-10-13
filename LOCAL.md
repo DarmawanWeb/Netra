@@ -86,8 +86,8 @@ passwords. Turn Wi-Fi off once and open <http://localhost> to be sure everything
    - the robot's own Wi-Fi or network (the laptop joins it, for example `192.168.234.x`);
    - a phone hotspot or a travel router;
    - the venue Wi-Fi (often blocks devices from reaching each other: use one of the above).
-2. `scripts/local.sh up`, `scripts/local.sh awake`, then `scripts/local.sh lan` lists the laptop's
-   address on that network, for example `http://192.168.234.57`.
+2. `scripts/local.sh start` (no rebuild, so no internet needed), `scripts/local.sh awake`, then
+   `scripts/local.sh lan` lists the laptop's address on that network, e.g. `http://192.168.234.57`.
 3. On the robot (SSH):
 
    ```bash
@@ -127,6 +127,7 @@ closes it).
 | Command | |
 |---|---|
 | `scripts/local.sh up` | start or update (rebuilds changed images) |
+| `scripts/local.sh start` | start the images built before, without internet (demo day) |
 | `scripts/local.sh status` | containers and API health |
 | `scripts/local.sh lan` | the Mac's address on every network, for `CC_URL` and phones |
 | `scripts/local.sh logs [api\|ai\|web\|db\|...]` | follow logs |
