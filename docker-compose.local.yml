@@ -1,6 +1,6 @@
 # Laptop / macOS override, enabled through COMPOSE_FILE in .env (scripts/local.sh setup writes it).
-# Plain HTTP on port 80 for the browser and the robots on the same Wi-Fi; images are built locally;
-# Ollama runs natively on macOS so the vision model uses the Apple GPU (containers cannot).
+# Plain HTTP on NETRA_LAN_PORT (80) for the browser and the robots on the same network; images are
+# built locally; Ollama runs natively on macOS so the vision model uses the Apple GPU.
 services:
   api:
     pull_policy: build
@@ -22,7 +22,7 @@ services:
     pull_policy: build
 
   caddy:
-    ports: !override ["80:80"]
+    ports: !override ["${NETRA_LAN_PORT:-80}:80"]
     volumes:
       - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
 

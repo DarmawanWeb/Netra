@@ -1,0 +1,13 @@
+# Behind a Cloudflare Tunnel, on top of docker-compose.local.yml:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.local.yml:docker-compose.tunnel.yml
+# Cloudflare terminates TLS; cloudflared on this computer forwards the public hostname to
+# 127.0.0.1:NETRA_TUNNEL_PORT. Caddy also keeps listening on the LAN port, so robots and phones
+# on the same network still reach this computer directly (http://<this computer>), with or
+# without internet. NETRA_LAN_BIND=127.0.0.1 turns the LAN side off.
+services:
+  caddy:
+    ports: !override
+      - "127.0.0.1:${NETRA_TUNNEL_PORT:-8088}:80"
+      - "${NETRA_LAN_BIND:-0.0.0.0}:${NETRA_LAN_PORT:-80}:80"
+    volumes:
+      - ./Caddyfile.tunnel:/etc/caddy/Caddyfile:ro

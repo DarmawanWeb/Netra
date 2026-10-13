@@ -16,6 +16,7 @@ in two submodules.
 | `monitoring/` | Prometheus scrape config, Grafana datasources (Prometheus, TimescaleDB) and dashboard |
 | `scripts/deploy.sh` | server: pull, update submodules, pull images, restart, pull the AI model |
 | `docker-compose.local.yml`, `Caddyfile.local`, `.env.local.example`, `scripts/local.sh` | running on a Mac (LOCAL.md) |
+| `docker-compose.tunnel.yml`, `Caddyfile.tunnel` | a Mac behind a Cloudflare Tunnel, LAN port kept for robots |
 
 ```
 internet ─443─> caddy ─┬─ /api ──> api ──┬─> TimescaleDB (state, telemetry, audit)
