@@ -5,6 +5,8 @@
 #   scripts/local.sh up                build and start the stack, print the addresses
 #   scripts/local.sh robot <id> [name] register a robot and print its /etc/pashupati/pashupati.env
 #   scripts/local.sh lan               addresses robots and phones can use on each network
+#   scripts/local.sh export [file]     all data (database, photos, floor plans) into one file
+#   scripts/local.sh import <file>     replace the data here with an export (demo laptop)
 #   scripts/local.sh status | logs [service] | doctor | awake | down | reset
 #
 # Works with the bash 3.2 that ships with macOS.
@@ -14,6 +16,15 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 ENV_FILE=.env
 TEMPLATE=.env.local.example
 AWAKE_PID=.awake.pid
+EXPORTS=exports
+API_UID=65532 # nonroot user of the netra-api image, owner of the data volume
+
+WORK=''
+cleanup() {
+    [[ -n $WORK ]] && rm -rf "$WORK"
+    return 0
+}
+trap cleanup EXIT
 
 if [[ -t 1 ]]; then
     B=$'\033[1m' G=$'\033[32m' Y=$'\033[33m' R=$'\033[31m' D=$'\033[2m' N=$'\033[0m'
@@ -33,6 +44,7 @@ envget() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- || tr
 mdns_name() { echo "$(scutil --get LocalHostName 2>/dev/null || hostname -s).local"; }
 random() { openssl rand -base64 64 | tr -dc 'A-Za-z0-9' | cut -c "1-${1:-24}"; }
 ram_gb() { echo $(($(sysctl -n hw.memsize) / 1073741824)); }
+size_of() { du -h "$1" | cut -f1 | tr -d ' '; }
 
 # Port of the dashboard and robot API on this computer (NETRA_LAN_PORT, default 80).
 lan_port() {
@@ -253,6 +265,117 @@ cmd_robot() {
     printf '  Then: sudo systemctl restart pashupati  — the robot shows up online on the dashboard.\n'
 }
 
+# --------------------------------------------------------------------------------- export / import
+
+container_of() {
+    local id
+    id=$(docker compose ps -a -q "$1" 2>/dev/null | head -1)
+    [[ -n $id ]] || die "the stack was never started here: scripts/local.sh up"
+    echo "$id"
+}
+
+# An image that is already on this computer (works offline) and has sh and tar: the database image.
+helper_image() { docker inspect -f '{{.Image}}' "$(container_of db)"; }
+
+db_ready() { docker compose exec -T db pg_isready -U netra -d netra >/dev/null 2>&1; }
+
+wait_db() {
+    for _ in $(seq 60); do
+        db_ready && return 0
+        sleep 1
+    done
+    return 1
+}
+
+psql_db() { docker compose exec -T db psql -X -q -v ON_ERROR_STOP=1 -U netra "$@"; }
+
+cmd_export() {
+    need_env
+    local out=${1:-$EXPORTS/netra-$(date +%Y%m%d-%H%M).tar.gz} api
+    db_ready || die "the database is not running: scripts/local.sh up"
+    api=$(container_of api)
+    mkdir -p "$EXPORTS" "$(dirname "$out")"
+    WORK=$(mktemp -d "$EXPORTS/.export-XXXXXX")
+    title "Exporting NETRA data"
+    if ! docker compose exec -T db pg_dump -U netra -d netra -Fc >"$WORK/netra.dump" 2>"$WORK/dump.log"; then
+        cat "$WORK/dump.log" >&2
+        die "database dump failed"
+    fi
+    ok "database ($(size_of "$WORK/netra.dump"))"
+    docker run --rm --volumes-from "$api" --entrypoint tar "$(helper_image)" cf - -C /data . >"$WORK/data.tar" ||
+        die "copying photos and floor plans failed"
+    ok "photos and floor plans ($(size_of "$WORK/data.tar"))"
+    printf 'netra-export 1\ncreated %s\nhost %s\n' "$(date '+%Y-%m-%d %H:%M %Z')" "$(hostname -s)" >"$WORK/MANIFEST"
+    tar czf "$out" -C "$WORK" MANIFEST netra.dump data.tar
+    ok "$out ($(size_of "$out"))"
+    printf '\n  Copy it to the demo laptop (AirDrop, USB, scp), then there:\n'
+    printf '    %sscripts/local.sh import %s%s\n' "$B" "$out" "$N"
+}
+
+cmd_import() {
+    need_env
+    local file=${1:-} api host created timescale counts log answer
+    [[ -n $file ]] || die "usage: scripts/local.sh import exports/netra-YYYYMMDD-HHMM.tar.gz"
+    [[ -f $file ]] || die "$file not found"
+    docker info >/dev/null 2>&1 || die "Docker Desktop is not running: open -a Docker"
+    api=$(container_of api)
+    mkdir -p "$EXPORTS"
+    WORK=$(mktemp -d "$EXPORTS/.import-XXXXXX")
+    if ! tar xzf "$file" -C "$WORK" MANIFEST netra.dump data.tar 2>/dev/null ||
+        ! grep -q '^netra-export 1$' "$WORK/MANIFEST"; then
+        die "$file is not a NETRA export"
+    fi
+    host=$(sed -n 's/^host //p' "$WORK/MANIFEST")
+    created=$(sed -n 's/^created //p' "$WORK/MANIFEST")
+
+    printf '%sReplace ALL NETRA data on this computer with the export of %s (%s)?%s Type "import": ' \
+        "$R" "$host" "$created" "$N"
+    read -r answer
+    [[ $answer == import ]] || exit 0
+
+    title "Importing"
+    docker compose up -d db >/dev/null
+    wait_db || die "the database does not start: scripts/local.sh logs db"
+    # Nothing may write while the database is replaced; the API comes back after the restore.
+    docker compose stop api backup grafana >/dev/null 2>&1 || true
+    psql_db -d postgres -c 'DROP DATABASE IF EXISTS netra WITH (FORCE)' -c 'CREATE DATABASE netra' ||
+        die "could not recreate the database"
+    timescale=$(docker compose exec -T db psql -X -tA -U netra -d netra \
+        -c "SELECT count(*) FROM pg_available_extensions WHERE name = 'timescaledb'") || die "the new database does not answer"
+    timescale=$(echo "$timescale" | tr -d '[:space:]')
+    if [[ $timescale == 1 ]]; then
+        # TimescaleDB restore procedure: hypertable catalogs come back intact, background jobs pause.
+        psql_db -d netra -c 'CREATE EXTENSION IF NOT EXISTS timescaledb' -c 'SELECT timescaledb_pre_restore()' >/dev/null ||
+            die "timescaledb_pre_restore failed"
+    fi
+    log="$EXPORTS/import-$(date +%Y%m%d-%H%M%S).log"
+    if docker compose exec -T db pg_restore -U netra -d netra --no-owner <"$WORK/netra.dump" >"$log" 2>&1; then
+        rm -f "$log"
+    else
+        warn "pg_restore reported problems, see $log"
+    fi
+    if [[ $timescale == 1 ]]; then
+        psql_db -d netra -c 'SELECT timescaledb_post_restore()' >/dev/null || die "timescaledb_post_restore failed"
+    fi
+    counts=$(docker compose exec -T db psql -X -tA -U netra -d netra -c "SELECT
+        (SELECT count(*) FROM robots) || ' robots, ' || (SELECT count(*) FROM routes) || ' routes, ' ||
+        (SELECT count(*) FROM floor_plans) || ' floor plans, ' || (SELECT count(*) FROM anomalies) || ' anomalies'") ||
+        die "the restored database is incomplete, see $log"
+    ok "database: $counts"
+
+    docker run --rm -i --volumes-from "$api" --entrypoint sh "$(helper_image)" -c \
+        "find /data -mindepth 1 -maxdepth 1 -exec rm -rf {} + && tar xf - -C /data && chown -R $API_UID:$API_UID /data" \
+        <"$WORK/data.tar" || die "restoring photos and floor plans failed"
+    ok "photos and floor plans"
+
+    docker compose up -d
+    wait_healthy || die "API not healthy after the import: scripts/local.sh logs api"
+    ok "imported from $host"
+    printf '\n  Log in with %sadmin / NETRA_ADMIN_PASSWORD of this computer%s; other users keep their passwords.\n' "$B" "$N"
+    printf '  Robots keep their tokens: on a robot only CC_URL changes to an address of this computer.\n'
+    print_lan
+}
+
 # ------------------------------------------------------------------------------------------ doctor
 
 cmd_doctor() {
@@ -346,8 +469,10 @@ status) cmd_status ;;
 logs) shift && cmd_logs "$@" ;;
 robot) shift && cmd_robot "$@" ;;
 lan) cmd_lan ;;
+export) shift && cmd_export "$@" ;;
+import) shift && cmd_import "$@" ;;
 doctor) cmd_doctor ;;
 awake) cmd_awake ;;
 reset) cmd_reset ;;
-*) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' ;;
+*) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' ;;
 esac
