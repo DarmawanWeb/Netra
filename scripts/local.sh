@@ -12,6 +12,7 @@
 #
 # Works with the bash 3.2 that ships with macOS.
 set -euo pipefail
+CALLER_DIR=$PWD
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 ENV_FILE=.env
@@ -21,8 +22,13 @@ EXPORTS=exports
 API_UID=65532 # nonroot user of the netra-api image, owner of the data volume
 
 WORK=''
+IMPORTING='' # set while the database is being replaced
 cleanup() {
     [[ -n $WORK ]] && rm -rf "$WORK"
+    if [[ -n $IMPORTING ]]; then
+        printf '\n  %s✗ import not finished: NETRA is stopped and its data may be incomplete.%s\n' "$R" "$N" >&2
+        printf '    Run the same import again: it starts from scratch.\n' >&2
+    fi
     return 0
 }
 trap cleanup EXIT
@@ -46,6 +52,7 @@ mdns_name() { echo "$(scutil --get LocalHostName 2>/dev/null || hostname -s).loc
 random() { openssl rand -base64 64 | tr -dc 'A-Za-z0-9' | cut -c "1-${1:-24}"; }
 ram_gb() { echo $(($(sysctl -n hw.memsize) / 1073741824)); }
 size_of() { du -h "$1" | cut -f1 | tr -d ' '; }
+from_caller() { case $1 in /*) echo "$1" ;; *) echo "$CALLER_DIR/$1" ;; esac; }
 
 # Port of the dashboard and robot API on this computer (NETRA_LAN_PORT, default 80).
 lan_port() {
@@ -78,7 +85,10 @@ iface_label() {
 }
 
 # Wi-Fi network name of an interface; empty when unknown (macOS may hide it).
-wifi_name() { ipconfig getsummary "$1" 2>/dev/null | awk -F ' SSID : ' '/ SSID : / { print $2; exit }' || true; }
+wifi_name() {
+    ipconfig getsummary "$1" 2>/dev/null |
+        awk -F ' SSID : ' '/ SSID : / && $2 != "<redacted>" { print $2; exit }' || true
+}
 
 compose_ok() {
     local v major minor
@@ -87,6 +97,11 @@ compose_ok() {
     minor=${v#*.}
     minor=${minor%%.*}
     [[ $major -gt 2 || ($major -eq 2 && $minor -ge 24) ]]
+}
+
+# The caffeinate started by awake is still running (a stale pid file may name another process).
+awake_running() {
+    [[ -f $AWAKE_PID ]] && ps -p "$(cat "$AWAKE_PID")" -o comm= 2>/dev/null | grep -q caffeinate
 }
 
 need_env() { [[ -f $ENV_FILE ]] || die "no .env yet: run scripts/local.sh setup"; }
@@ -281,7 +296,7 @@ cmd_robot() {
 
 container_of() {
     local id
-    id=$(docker compose ps -a -q "$1" 2>/dev/null | head -1)
+    id=$(docker compose ps -a -q "$1" 2>/dev/null | head -1) || true
     [[ -n $id ]] || die "the stack was never started here: scripts/local.sh up"
     echo "$id"
 }
@@ -303,7 +318,9 @@ psql_db() { docker compose exec -T db psql -X -q -v ON_ERROR_STOP=1 -U netra "$@
 
 cmd_export() {
     need_env
-    local out=${1:-$EXPORTS/netra-$(date +%Y%m%d-%H%M).tar.gz} api
+    local out api
+    out=$EXPORTS/netra-$(date +%Y%m%d-%H%M).tar.gz
+    [[ -z ${1:-} ]] || out=$(from_caller "$1")
     db_ready || die "the database is not running: scripts/local.sh up"
     api=$(container_of api)
     mkdir -p "$EXPORTS" "$(dirname "$out")"
@@ -326,19 +343,21 @@ cmd_export() {
 
 cmd_import() {
     need_env
-    local file=${1:-} api host created timescale counts log answer
+    local file=${1:-} api host created timescale counts log answer restored=1
     [[ -n $file ]] || die "usage: scripts/local.sh import exports/netra-YYYYMMDD-HHMM.tar.gz"
+    file=$(from_caller "$file")
     [[ -f $file ]] || die "$file not found"
     docker info >/dev/null 2>&1 || die "Docker Desktop is not running: open -a Docker"
-    api=$(container_of api)
     mkdir -p "$EXPORTS"
     WORK=$(mktemp -d "$EXPORTS/.import-XXXXXX")
-    if ! tar xzf "$file" -C "$WORK" MANIFEST netra.dump data.tar 2>/dev/null ||
-        ! grep -q '^netra-export 1$' "$WORK/MANIFEST"; then
-        die "$file is not a NETRA export"
-    fi
+    tar xzf "$file" -C "$WORK" MANIFEST netra.dump data.tar || die "$file is not a NETRA export"
+    grep -q '^netra-export 1$' "$WORK/MANIFEST" || die "$file is not a NETRA export"
     host=$(sed -n 's/^host //p' "$WORK/MANIFEST")
     created=$(sed -n 's/^created //p' "$WORK/MANIFEST")
+    # Containers (not started) for the data volume, also after "down"; the images must exist.
+    docker compose up --no-start --no-build >/dev/null 2>&1 ||
+        die "NETRA images missing here: run scripts/local.sh up once (with internet), then import"
+    api=$(container_of api)
 
     printf '%sReplace ALL NETRA data on this computer with the export of %s (%s)?%s Type "import": ' \
         "$R" "$host" "$created" "$N"
@@ -346,10 +365,11 @@ cmd_import() {
     [[ $answer == import ]] || exit 0
 
     title "Importing"
-    docker compose up -d db >/dev/null
+    docker compose up -d --no-build db >/dev/null || die "the database does not start: scripts/local.sh logs db"
     wait_db || die "the database does not start: scripts/local.sh logs db"
     # Nothing may write while the database is replaced; the API comes back after the restore.
     docker compose stop api backup grafana >/dev/null 2>&1 || true
+    IMPORTING=1
     psql_db -d postgres -c 'DROP DATABASE IF EXISTS netra WITH (FORCE)' -c 'CREATE DATABASE netra' ||
         die "could not recreate the database"
     timescale=$(docker compose exec -T db psql -X -tA -U netra -d netra \
@@ -361,9 +381,8 @@ cmd_import() {
             die "timescaledb_pre_restore failed"
     fi
     log="$EXPORTS/import-$(date +%Y%m%d-%H%M%S).log"
-    if docker compose exec -T db pg_restore -U netra -d netra --no-owner <"$WORK/netra.dump" >"$log" 2>&1; then
-        rm -f "$log"
-    else
+    if ! docker compose exec -T db pg_restore -U netra -d netra --no-owner <"$WORK/netra.dump" >"$log" 2>&1; then
+        restored=''
         warn "pg_restore reported problems, see $log"
     fi
     if [[ $timescale == 1 ]]; then
@@ -380,8 +399,10 @@ cmd_import() {
         <"$WORK/data.tar" || die "restoring photos and floor plans failed"
     ok "photos and floor plans"
 
-    docker compose up -d
+    IMPORTING=''
+    docker compose up -d --no-build || die "data imported, but the stack did not start: scripts/local.sh start"
     wait_healthy || die "API not healthy after the import: scripts/local.sh logs api"
+    [[ -z $restored ]] || rm -f "$log"
     ok "imported from $host"
     printf '\n  Log in with %sadmin / NETRA_ADMIN_PASSWORD of this computer%s; other users keep their passwords.\n' "$B" "$N"
     printf '  Robots keep their tokens: on a robot only CC_URL changes to an address of this computer.\n'
@@ -395,7 +416,8 @@ cmd_doctor() {
     if docker info >/dev/null 2>&1; then ok "Docker Desktop running"; else bad "Docker Desktop not running"; fi
     if compose_ok; then ok "Compose $(docker compose version --short)"; else bad "Compose 2.24+ required"; fi
     local mem
-    mem=$(docker info --format '{{.MemTotal}}' 2>/dev/null || echo 0)
+    mem=$(docker info --format '{{.MemTotal}}' 2>/dev/null) || mem=0
+    [[ $mem =~ ^[0-9]+$ ]] || mem=0
     if [[ $((mem / 1073741824)) -ge 4 ]]; then ok "Docker memory $((mem / 1073741824)) GB"; else warn "Docker memory below 4 GB (Settings → Resources)"; fi
 
     title "AI"
@@ -441,7 +463,7 @@ cmd_doctor() {
     else
         ok "macOS firewall off"
     fi
-    if [[ -f $AWAKE_PID ]] && kill -0 "$(cat $AWAKE_PID)" 2>/dev/null; then
+    if awake_running; then
         ok "kept awake"
     else
         warn "the Mac may sleep: scripts/local.sh awake"
@@ -449,7 +471,7 @@ cmd_doctor() {
 }
 
 cmd_awake() {
-    if [[ -f $AWAKE_PID ]] && kill -0 "$(cat $AWAKE_PID)" 2>/dev/null; then
+    if awake_running; then
         ok "already kept awake"
         return
     fi
@@ -459,10 +481,10 @@ cmd_awake() {
 }
 
 cmd_sleep_ok() {
-    if [[ -f $AWAKE_PID ]]; then
-        kill "$(cat $AWAKE_PID)" 2>/dev/null || true
-        rm -f "$AWAKE_PID"
+    if awake_running; then
+        kill "$(cat "$AWAKE_PID")" 2>/dev/null || true
     fi
+    rm -f "$AWAKE_PID"
 }
 
 cmd_reset() {
@@ -487,5 +509,5 @@ import) shift && cmd_import "$@" ;;
 doctor) cmd_doctor ;;
 awake) cmd_awake ;;
 reset) cmd_reset ;;
-*) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//' ;;
+*) sed -n '2,11p' scripts/local.sh | sed 's/^# \{0,1\}//' ;;
 esac
