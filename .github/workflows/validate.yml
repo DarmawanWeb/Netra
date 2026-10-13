@@ -8,6 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: cp .env.example .env # the api service reads env_file .env
       - run: docker compose --env-file .env.example config --quiet
       - run: docker compose -f docker-compose.yml -f docker-compose.local.yml --env-file .env.local.example config --quiet
       - run: shellcheck scripts/*.sh
