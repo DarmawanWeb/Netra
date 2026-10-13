@@ -27,10 +27,13 @@ internet ─443─> caddy ─┬─ /api ──> api ──┬─> TimescaleDB (
 robots ──WebSocket/HTTPS──> /api/v1/robot/*
 ```
 
-## Run on a Mac (robots over Wi-Fi)
+## Run on a Mac (robots on the same network)
 
 See **[LOCAL.md](LOCAL.md)**: `scripts/local.sh setup && scripts/local.sh up`, then
-`scripts/local.sh robot <id>` prints the robot's connection settings.
+`scripts/local.sh robot <id>` prints the robot's connection settings. For a demo on a laptop,
+`scripts/local.sh export` on the server and `scripts/local.sh import` on the laptop copy the data
+over, so robots keep their tokens and only change `CC_URL`
+([Demo: the command center on a laptop](LOCAL.md#demo-the-command-center-on-a-laptop)).
 
 ## Deploy on a server
 
