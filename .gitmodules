@@ -1,6 +1,6 @@
 [submodule "be"]
 	path = be
-	url = git@github.com:DarmawanRobotics/netra-fleet-be.git
+	url = git@github.com:DarmawanWeb/netra-fleet-be.git
 [submodule "fe"]
 	path = fe
-	url = git@github.com:DarmawanRobotics/netra-fleet-fe.git
+	url = git@github.com:DarmawanWeb/netra-fleet-fe.git

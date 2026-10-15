@@ -9,8 +9,8 @@ in two submodules.
 
 | Path | |
 |---|---|
-| [`be/`](https://github.com/DarmawanRobotics/netra-fleet-be) | `netra-api` (Go) + `netra-ai` (FastAPI, vision-language model) |
-| [`fe/`](https://github.com/DarmawanRobotics/netra-fleet-fe) | `netra-web` (Next.js dashboard) |
+| [`be/`](https://github.com/DarmawanWeb/netra-fleet-be) | `netra-api` (Go) + `netra-ai` (FastAPI, vision-language model) |
+| [`fe/`](https://github.com/DarmawanWeb/netra-fleet-fe) | `netra-web` (Next.js dashboard) |
 | `docker-compose.yml` | the whole stack |
 | `Caddyfile` | HTTPS, `/api` → API, `/grafana` → Grafana, rest → dashboard |
 | `monitoring/` | Prometheus scrape config, Grafana datasources (Prometheus, TimescaleDB) and dashboard |
@@ -38,7 +38,7 @@ over, so robots keep their tokens and only change `CC_URL`
 ## Deploy on a server
 
 ```bash
-git clone --recursive git@github.com:DarmawanRobotics/netra-fleet.git && cd netra-fleet
+git clone --recursive git@github.com:DarmawanWeb/Netra.git && cd Netra
 cp .env.example .env            # domain, passwords, Telegram, AI model
 docker compose up -d --build    # or with CI images: docker compose pull && docker compose up -d
 docker compose exec ollama ollama pull qwen2.5vl:7b

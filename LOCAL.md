@@ -21,7 +21,7 @@ macOS so it can use the Apple GPU.
 ## Start
 
 ```bash
-cd netra-fleet
+cd Netra
 git submodule update --init --recursive   # be/ and fe/
 scripts/local.sh setup                    # checks, .env with generated passwords, Ollama + model
 scripts/local.sh up                       # builds and starts everything (first build: a few minutes)
@@ -72,7 +72,7 @@ copy of the server data: the same floor plans, routes, robots and robot tokens. 
 scripts/local.sh export                       # -> exports/netra-YYYYMMDD-HHMM.tar.gz
 
 # on the laptop
-git clone --recursive git@github.com:DarmawanRobotics/netra-fleet.git && cd netra-fleet
+git clone --recursive git@github.com:DarmawanWeb/Netra.git && cd Netra
 scripts/local.sh setup && scripts/local.sh up
 scripts/local.sh import netra-YYYYMMDD-HHMM.tar.gz   # copied from the server (AirDrop, USB, scp)
 ```

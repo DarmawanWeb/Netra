@@ -28,7 +28,7 @@ services:
 
   api:
     <<: *restart
-    image: ${REGISTRY:-ghcr.io/darmawanrobotics}/netra-api:${TAG:-main}
+    image: ${REGISTRY:-ghcr.io/darmawanweb}/netra-api:${TAG:-main}
     build: ./be
     env_file: .env
     environment:
@@ -45,7 +45,7 @@ services:
 
   ai:
     <<: *restart
-    image: ${REGISTRY:-ghcr.io/darmawanrobotics}/netra-ai:${TAG:-main}
+    image: ${REGISTRY:-ghcr.io/darmawanweb}/netra-ai:${TAG:-main}
     build: ./be/ai
     environment:
       OLLAMA_URL: http://ollama:11434
@@ -65,7 +65,7 @@ services:
 
   web:
     <<: *restart
-    image: ${REGISTRY:-ghcr.io/darmawanrobotics}/netra-web:${TAG:-main}
+    image: ${REGISTRY:-ghcr.io/darmawanweb}/netra-web:${TAG:-main}
     build: ./fe
     depends_on: [api]
 
