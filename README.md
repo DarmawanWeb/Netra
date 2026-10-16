@@ -55,6 +55,15 @@ Backups: daily `pg_dump` into `backups/` (kept `BACKUP_KEEP_DAYS`); restore with
 `docker compose exec -T db pg_restore -U netra -d netra --clean < backups/netra-YYYY-MM-DD.dump`.
 Anomaly photos and floor plans are in the `api-data` volume.
 
+## Integration API (third-party apps)
+
+Other systems read the anomalies (with their original photos), robots, patrols, routes and floor
+plans over `https://<domain>/api/ext/v1`, with OAuth2 client credentials. An admin creates a client
+in **Settings → API clients** (scopes; the secret is shown once) and gives the third party the
+`client_id`, the `client_secret`, the guide
+[INTEGRATION.md](https://github.com/DarmawanWeb/netra-fleet-be/blob/main/INTEGRATION.md) and the
+interactive docs at `https://<domain>/api/ext/docs` (OpenAPI: `/api/ext/v1/openapi.yaml`).
+
 ## Develop
 
 ```bash

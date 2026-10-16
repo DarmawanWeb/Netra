@@ -122,6 +122,9 @@ Cloudflare terminates TLS. The LAN port stays open, so robots on the same networ
 still use `http://<Mac IP>` and keep working when the internet is down (`NETRA_LAN_BIND=127.0.0.1`
 closes it).
 
+Third-party apps use the integration API through the same hostname: docs at
+`https://netra.example.com/api/ext/docs`, clients in **Settings → API clients** (README).
+
 ## Everyday commands
 
 | Command | |
@@ -151,6 +154,7 @@ daily database dumps go to `backups/`, exports to `exports/`.
 | `NETRA_LANG` | language of Telegram captions (`en`, `id`) |
 | `NETRA_LAN_PORT` | port for the dashboard and robots (80); add it to `NETRA_PUBLIC_URL` when changed |
 | `NETRA_TUNNEL_PORT`, `NETRA_LAN_BIND` | tunnel only: local port for cloudflared (8088), LAN side (`0.0.0.0`) |
+| `NETRA_EXT_TOKEN_MINUTES` | integration API access token lifetime (60) |
 
 After editing `.env`: `scripts/local.sh up`.
 
