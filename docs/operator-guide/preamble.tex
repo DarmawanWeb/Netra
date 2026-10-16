@@ -1,0 +1,117 @@
+% Style of the NETRA operator guide (Indonesian). Same palette as the dashboard.
+\usepackage[a4paper,margin=2.2cm,headheight=14pt,includehead,includefoot]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{mathptmx}
+\usepackage[scaled=0.92]{helvet}
+\usepackage{courier}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{booktabs,tabularx,array}
+\usepackage{enumitem}
+\usepackage{amssymb}
+\usepackage{pifont}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,backgrounds,calc}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage[most]{tcolorbox}
+\usepackage{multicol}
+\usepackage{float}
+\usepackage[hidelinks]{hyperref}
+\usepackage{bookmark}
+
+\definecolor{netra}{HTML}{0E7490}
+\definecolor{netralight}{HTML}{E6F6FA}
+\definecolor{ink}{HTML}{0F172A}
+\definecolor{muted}{HTML}{64748B}
+\definecolor{line}{HTML}{CBD5E1}
+\definecolor{warnc}{HTML}{B45309}
+\definecolor{okc}{HTML}{15803D}
+\definecolor{dangerc}{HTML}{B91C1C}
+
+\hypersetup{colorlinks=true,linkcolor=netra,urlcolor=netra,
+  pdftitle={NETRA - Panduan Operator},pdfauthor={EZRA Robotics},pdfsubject={Robot patroli Genisom L1W dan pusat komando NETRA}}
+
+% Indonesian names without babel (no Indonesian hyphenation patterns installed); text is set
+% ragged right without hyphenation, which reads better for a step-by-step guide anyway.
+\renewcommand{\contentsname}{Daftar Isi}
+\renewcommand{\figurename}{Gambar}
+\renewcommand{\tablename}{Tabel}
+\hyphenpenalty=10000
+\exhyphenpenalty=10000
+\AtBeginDocument{\raggedright}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\renewcommand{\arraystretch}{1.25}
+\setlist{itemsep=2pt,topsep=3pt}
+\setlist[enumerate]{label=\textbf{\color{netra}\arabic*.},leftmargin=1.6em}
+\setlist[itemize]{label=\textcolor{netra}{\textbullet},leftmargin=1.4em}
+
+\titleformat{\section}{\sffamily\bfseries\LARGE\color{netra}}{\thesection}{0.6em}{}
+\titlespacing*{\section}{0pt}{6pt}{10pt}
+\titleformat{\subsection}{\sffamily\bfseries\large\color{ink}}{\thesubsection}{0.6em}{}
+\titlespacing*{\subsection}{0pt}{12pt}{4pt}
+\titleformat{\subsubsection}{\sffamily\bfseries\color{netra}}{}{0pt}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{netra}\textbf{NETRA}\enspace\color{muted}Panduan Operator}
+\fancyhead[R]{\small\color{muted}\nouppercase{\leftmark}}
+\fancyfoot[L]{\small\color{muted}EZRA Robotics}
+\fancyfoot[R]{\small\color{muted}\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancypagestyle{plain}{}  % pages that ask for "plain" (table of contents) keep the same header
+\renewcommand{\headrule}{\color{line}\hrule height\headrulewidth}
+\renewcommand{\sectionmark}[1]{\markboth{#1}{}}
+
+% UI labels and keys
+\newcommand{\ui}[1]{\textbf{#1}}
+\newcommand{\key}[1]{\tikz[baseline=(k.base)]\node[draw=muted,rounded corners=2pt,inner sep=2pt,font=\footnotesize\bfseries](k){#1};}
+\newcommand{\code}[1]{\texttt{\small #1}}
+
+% Boxes
+\newtcolorbox{penting}[1][Penting]{colback=red!4,colframe=dangerc,fonttitle=\bfseries\small,title=#1,
+  boxrule=0.7pt,arc=2pt,left=7pt,right=7pt,top=4pt,bottom=4pt,before skip=8pt,after skip=8pt}
+\newtcolorbox{tips}[1][Tips]{colback=netralight,colframe=netra,fonttitle=\bfseries\small,title=#1,
+  boxrule=0.7pt,arc=2pt,left=7pt,right=7pt,top=4pt,bottom=4pt,before skip=8pt,after skip=8pt}
+\newtcolorbox{teknisi}[1][Untuk teknisi]{colback=gray!5,colframe=muted,fonttitle=\bfseries\small,title=#1,
+  boxrule=0.6pt,arc=2pt,left=7pt,right=7pt,top=4pt,bottom=4pt,before skip=8pt,after skip=8pt}
+
+% Screenshot with a thin frame and a caption line under it
+\setlength{\fboxsep}{0pt}
+\newcommand{\shot}[3][\linewidth]{%
+  \begin{center}
+    \fcolorbox{line}{white}{\includegraphics[width=\dimexpr#1-1pt\relax]{img/#2}}\\[3pt]
+    {\small\color{muted}#3}
+  \end{center}}
+
+% Numbered call-out marker used in text and on top of screenshots
+\newcommand{\callout}[1]{\tikz[baseline=(c.base)]\node[circle,fill=netra,text=white,inner sep=1.2pt,minimum size=13pt,font=\scriptsize\bfseries](c){#1};}
+
+\tikzset{
+  box/.style={draw=netra,fill=netralight,rounded corners=4pt,align=center,font=\small,minimum height=12mm,inner sep=5pt},
+  dark/.style={draw=ink,fill=ink!6,rounded corners=4pt,align=center,font=\small,minimum height=12mm,inner sep=5pt},
+  ext/.style={draw=muted,fill=gray!6,rounded corners=4pt,align=center,font=\small,minimum height=12mm,inner sep=5pt,dashed},
+  arr/.style={-{Stealth[length=2.4mm]},thick,draw=ink!70},
+  biarr/.style={{Stealth[length=2.4mm]}-{Stealth[length=2.4mm]},thick,draw=ink!70},
+  lbl/.style={font=\scriptsize,fill=white,inner sep=1.5pt,text=muted},
+  state/.style={draw=#1,fill=#1!8,rounded corners=3pt,font=\small\bfseries,inner sep=5pt,text=#1!70!black},
+}
+\setlength{\emergencystretch}{3em}
+
+% Table columns set ragged right like the text: Y (flexible), B{width} (bold first column)
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{B}[1]{>{\raggedright\arraybackslash\bfseries}p{#1}}
+
+% Compact table of contents: one line per section, on the first page with the introduction
+\usepackage{tocloft}
+\setlength{\cftbeforesecskip}{2.5pt}
+\renewcommand{\cftsecfont}{\color{ink}}
+\renewcommand{\cftsecpagefont}{\color{muted}}
+\renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}
+\setlength{\cftbeforetoctitleskip}{8pt}
+\setlength{\cftaftertoctitleskip}{6pt}
+\renewcommand{\cfttoctitlefont}{\sffamily\bfseries\LARGE\color{netra}}

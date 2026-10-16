@@ -1,0 +1,8 @@
+# LaTeX build output; the PDF is copied to ../NETRA-Panduan-Operator.pdf by `make`
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.toc
+main.pdf
