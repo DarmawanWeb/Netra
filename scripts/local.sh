@@ -8,6 +8,7 @@
 #   scripts/local.sh lan               addresses robots and phones can use on each network
 #   scripts/local.sh export [file]     all data (database, photos, floor plans) into one file
 #   scripts/local.sh import <file>     replace the data here with an export (demo laptop)
+#   scripts/local.sh ports             ports NETRA publishes on this computer, and who holds them
 #   scripts/local.sh status | logs [service] | doctor | awake | down | reset
 #
 # Works with the bash 3.2 that ships with macOS.
@@ -62,6 +63,79 @@ lan_port() {
 }
 port_suffix() { [[ $(lan_port) == 80 ]] || echo ":$(lan_port)"; }
 BASE_URL="http://localhost$(port_suffix)"
+
+# Tunnel port (NETRA_TUNNEL_PORT, default 8088), only published with docker-compose.tunnel.yml.
+tunnel_on() { [[ $(envget COMPOSE_FILE) == *docker-compose.tunnel.yml* ]]; }
+tunnel_port() {
+    local port
+    port=$(envget NETRA_TUNNEL_PORT)
+    echo "${port:-8088}"
+}
+
+# Host ports NETRA publishes ("name port"); every other service stays inside Docker.
+netra_ports() {
+    echo "lan $(lan_port)"
+    if tunnel_on; then echo "tunnel $(tunnel_port)"; fi
+}
+
+# Something accepts connections on the port (works for listeners of any user, unlike lsof).
+port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+
+# The port is published by this stack's own containers (a restart keeps it).
+port_ours() {
+    [[ -n $(docker ps -q --filter label=com.docker.compose.project=netra-fleet --filter "publish=$1" 2>/dev/null) ]]
+}
+
+# Who holds a port: the compose project or process name when visible, else a hint.
+port_holder() {
+    local project name
+    project=$(docker ps --filter "publish=$1" --format '{{.Label "com.docker.compose.project"}} ({{.Names}})' 2>/dev/null | head -1)
+    if [[ -n $project ]]; then
+        echo "Docker: $project"
+        return
+    fi
+    name=$(lsof -nP -iTCP:"$1" -sTCP:LISTEN -Fc 2>/dev/null | sed -n 's/^c//p' | head -1)
+    echo "${name:-another program (sudo lsof -nP -iTCP:$1 -sTCP:LISTEN)}"
+}
+
+# Stop before compose fails half way when another stack or program already uses a NETRA port.
+check_ports() {
+    local name port clash=''
+    while read -r name port; do
+        if port_busy "$port" && ! port_ours "$port"; then
+            bad "port $port ($name) is used by $(port_holder "$port")"
+            clash=1
+        fi
+    done < <(netra_ports)
+    [[ -z $clash ]] && return 0
+    printf '    Pick free ports in .env (NETRA_LAN_PORT, NETRA_TUNNEL_PORT), see LOCAL.md
+' >&2
+    printf '    "Next to other stacks", then run this again.
+' >&2
+    exit 1
+}
+
+cmd_ports() {
+    need_env
+    local name port state bind
+    bind=$(envget NETRA_LAN_BIND)
+    title "Ports NETRA publishes on this computer"
+    while read -r name port; do
+        if port_ours "$port"; then
+            state="${G}NETRA${N}"
+        elif port_busy "$port"; then
+            state="${R}used by $(port_holder "$port")${N}"
+        else
+            state="free"
+        fi
+        case $name in
+        lan) printf '  %-6s %-24s %s\n' "$port" "dashboard and robots (${bind:-0.0.0.0})" "$state" ;;
+        tunnel) printf '  %-6s %-24s %s\n' "$port" "cloudflared (127.0.0.1)" "$state" ;;
+        esac
+    done < <(netra_ports)
+    printf '  %sEverything else (database, API, Grafana, Prometheus, NATS) stays inside Docker.%s\n' "$D" "$N"
+    printf '  %sOllama on 11434 is shared with other stacks on this computer.%s\n' "$D" "$N"
+}
 
 # "interface address" for every IPv4 address a robot could reach (no loopback or VPN tunnels).
 lan_addrs() {
@@ -186,6 +260,7 @@ cmd_setup() {
 cmd_up() {
     need_env
     docker info >/dev/null 2>&1 || die "Docker Desktop is not running: open -a Docker"
+    check_ports
     start_ollama || warn "Ollama is not running: final detection falls back to the robot result"
     title "Starting NETRA Fleet (first build takes a few minutes)"
     docker compose up -d --build --remove-orphans
@@ -197,6 +272,7 @@ cmd_up() {
 cmd_start() {
     need_env
     docker info >/dev/null 2>&1 || die "Docker Desktop is not running: open -a Docker"
+    check_ports
     start_ollama || warn "Ollama is not running: final detection falls back to the robot result"
     title "Starting NETRA Fleet (no rebuild)"
     docker compose up -d --no-build --remove-orphans || die "images missing: run scripts/local.sh up once with internet"
@@ -435,6 +511,18 @@ cmd_doctor() {
         bad "AI container cannot reach Ollama: brew services stop ollama && OLLAMA_HOST=0.0.0.0 ollama serve"
     fi
 
+    title "Ports"
+    local name port
+    while read -r name port; do
+        if port_ours "$port"; then
+            ok "$name port $port: NETRA"
+        elif port_busy "$port"; then
+            bad "$name port $port used by $(port_holder "$port") (scripts/local.sh ports)"
+        else
+            ok "$name port $port free"
+        fi
+    done < <(netra_ports)
+
     title "Stack"
     if curl -fsS --max-time 3 "$BASE_URL/healthz" >/dev/null 2>&1; then
         ok "API healthy on $BASE_URL"
@@ -504,10 +592,11 @@ status) cmd_status ;;
 logs) shift && cmd_logs "$@" ;;
 robot) shift && cmd_robot "$@" ;;
 lan) cmd_lan ;;
+ports) cmd_ports ;;
 export) shift && cmd_export "$@" ;;
 import) shift && cmd_import "$@" ;;
 doctor) cmd_doctor ;;
 awake) cmd_awake ;;
 reset) cmd_reset ;;
-*) sed -n '2,11p' scripts/local.sh | sed 's/^# \{0,1\}//' ;;
+*) sed -n '2,12p' scripts/local.sh | sed 's/^# \{0,1\}//' ;;
 esac

@@ -125,6 +125,46 @@ closes it).
 Third-party apps use the integration API through the same hostname: docs at
 `https://netra.example.com/api/ext/docs`, clients in **Settings → API clients** (README).
 
+## Next to other stacks
+
+On a computer that already runs other services (the Mac mini with Taksu, the Molly dashboard and
+the server monitoring), NETRA must not take their ports. Only Caddy publishes ports; the database,
+API, Grafana, Prometheus and NATS stay inside Docker, and the compose project `netra-fleet` keeps
+its own containers, network and volumes. Give NETRA its own block on the loopback and let robots
+and people come in through the tunnel:
+
+```bash
+# .env
+COMPOSE_FILE=docker-compose.yml:docker-compose.local.yml:docker-compose.tunnel.yml
+NETRA_PUBLIC_URL=https://netra.example.com
+NETRA_TUNNEL_PORT=4490
+NETRA_LAN_PORT=4491
+NETRA_LAN_BIND=127.0.0.1
+```
+
+| Port | Used by | |
+|---|---|---|
+| 80, 8080 | other services on the Mac mini | never for NETRA there |
+| 3000, 3100, 9090 | server Grafana, Loki, Prometheus | NETRA's own Grafana and Prometheus are not published |
+| 4470 | Molly dashboard | `127.0.0.1` |
+| 4480 | Taksu (Caddy) | `127.0.0.1` |
+| 4490, 4491 | NETRA tunnel and loopback LAN port | `127.0.0.1` |
+| 11434 | Ollama, native, shared | NETRA's vision model and the other stacks' models share its memory |
+
+`scripts/local.sh up` and `start` stop with the name of the program or compose project holding a
+port before anything starts; `scripts/local.sh ports` and `doctor` show the same. In
+`~/.cloudflared/config.yml` each hostname points at its stack's port:
+
+```yaml
+ingress:
+  - hostname: netra.example.com
+    service: http://127.0.0.1:4490
+  - service: http_status:404
+```
+
+On a laptop at a site, keep the defaults (port 80 on every interface) so robots on the same Wi-Fi
+reach NETRA directly.
+
 ## Everyday commands
 
 | Command | |
@@ -133,6 +173,7 @@ Third-party apps use the integration API through the same hostname: docs at
 | `scripts/local.sh start` | start the images built before, without internet (demo day) |
 | `scripts/local.sh status` | containers and API health |
 | `scripts/local.sh lan` | the Mac's address on every network, for `CC_URL` and phones |
+| `scripts/local.sh ports` | ports NETRA publishes and whether another program holds them |
 | `scripts/local.sh logs [api\|ai\|web\|db\|...]` | follow logs |
 | `scripts/local.sh doctor` | check Docker, Ollama, model, AI link, LAN reachability, firewall, sleep |
 | `scripts/local.sh export [file]` | database, photos and floor plans in one file |
@@ -154,6 +195,7 @@ daily database dumps go to `backups/`, exports to `exports/`.
 | `NETRA_LANG` | language of Telegram captions (`en`, `id`) |
 | `NETRA_LAN_PORT` | port for the dashboard and robots (80); add it to `NETRA_PUBLIC_URL` when changed |
 | `NETRA_TUNNEL_PORT`, `NETRA_LAN_BIND` | tunnel only: local port for cloudflared (8088), LAN side (`0.0.0.0`) |
+| (shared server) | `NETRA_TUNNEL_PORT=4490`, `NETRA_LAN_PORT=4491`, `NETRA_LAN_BIND=127.0.0.1`, see [Next to other stacks](#next-to-other-stacks) |
 | `NETRA_EXT_TOKEN_MINUTES` | integration API access token lifetime (60) |
 
 After editing `.env`: `scripts/local.sh up`.
@@ -164,7 +206,7 @@ After editing `.env`: `scripts/local.sh up`.
 |---|---|
 | `doctor`: AI container cannot reach Ollama | `brew services stop ollama && OLLAMA_HOST=0.0.0.0 ollama serve` |
 | Robot stays offline | on the robot `curl http://<address>/healthz`; no answer: other network, venue Wi-Fi isolating devices, or the macOS firewall (allow Docker); `401` in `logs api`: wrong `CC_TOKEN` |
-| Port 80 already in use | stop the other web server (`sudo lsof -i :80`) or set `NETRA_LAN_PORT` |
+| `port … is used by …` at `up` | another stack or program has the port: set `NETRA_LAN_PORT` / `NETRA_TUNNEL_PORT` ([Next to other stacks](#next-to-other-stacks)) |
 | `git pull` refuses: untracked `docker-compose.tunnel.yml` / `Caddyfile.tunnel` | delete the two hand-made files, the repository has them now |
 | Anomalies stay "Analyzing" for long | the model is loading or too large for the RAM: use `qwen2.5vl:3b` |
 | Schedules did not run | the Mac slept: `scripts/local.sh awake`, keep the lid open or use an external display |
