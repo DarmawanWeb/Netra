@@ -31,6 +31,11 @@ scripts/local.sh awake                    # keep the Mac awake for schedules and
 Open <http://localhost> and log in as `admin` with the password printed by `setup` (it is also
 `NETRA_ADMIN_PASSWORD` in `.env`). Grafana is at <http://localhost/grafana>.
 
+Install the license: copy it to `license/netra.lic` and `scripts/local.sh up`, or paste it in
+**Settings › License**. Without one only the core runs, with one robot
+([license/README.md](license/README.md)). `scripts/local.sh export` carries a license installed in
+the dashboard (it is in the database); a license file is copied by hand.
+
 ## Connect a robot
 
 1. Put the robot and the Mac on the same network: the same Wi-Fi, the robot's own Wi-Fi, a phone
@@ -155,6 +160,7 @@ daily database dumps go to `backups/`, exports to `exports/`.
 | `NETRA_LAN_PORT` | port for the dashboard and robots (80); add it to `NETRA_PUBLIC_URL` when changed |
 | `NETRA_TUNNEL_PORT`, `NETRA_LAN_BIND` | tunnel only: local port for cloudflared (8088), LAN side (`0.0.0.0`) |
 | `NETRA_EXT_TOKEN_MINUTES` | integration API access token lifetime (60) |
+| (file) `license/netra.lic` | the license; not in `.env` |
 
 After editing `.env`: `scripts/local.sh up`.
 
