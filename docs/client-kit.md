@@ -2,7 +2,10 @@
 
 What EZRA Robotics hands over for each deployment, and in which order. The client-facing guide
 is [INSTALL.md](../INSTALL.md) ([Indonesian](../INSTALL.id.md)); licenses are explained in
-[netra-fleet-be licensing](https://github.com/DarmawanWeb/netra-fleet-be/blob/main/docs/licensing.md).
+[netra-fleet-be licensing](https://github.com/DarmawanWeb/netra-fleet-be/blob/main/docs/licensing.md)
+and issued with the
+[License Manager](https://github.com/DarmawanWeb/netra-fleet-be/blob/main/docs/license-manager.md)
+(`make license-manager` in netra-fleet-be, on EZRA's own computer).
 
 ## What the client gets
 
