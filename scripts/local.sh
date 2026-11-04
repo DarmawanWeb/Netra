@@ -253,6 +253,11 @@ cmd_status() {
     need_env
     docker compose ps --format 'table {{.Service}}\t{{.State}}\t{{.Status}}'
     if curl -fsS --max-time 3 "$BASE_URL/healthz" >/dev/null 2>&1; then ok "API healthy"; else bad "API not reachable on $BASE_URL"; fi
+    if [[ -s license/netra.lic ]]; then
+        ok "license file license/netra.lic (Settings › License shows what it includes)"
+    else
+        warn "no license/netra.lic: the core only, unless a license is installed in Settings › License"
+    fi
 }
 
 cmd_logs() { docker compose logs -f --tail=150 "$@"; }

@@ -38,7 +38,9 @@ services:
       NETRA_ALLOWED_ORIGIN: https://${NETRA_DOMAIN}
       NETRA_NATS_URL: nats://nats:4222
       NETRA_FINAL_DETECTOR_URL: http://ai:8090/detect
-    volumes: [api-data:/data]
+      # The license of this deployment (license/README.md); missing: the core only
+      NETRA_LICENSE_FILE: /license/netra.lic
+    volumes: [api-data:/data, ./license:/license:ro]
     depends_on:
       db: { condition: service_healthy }
       nats: { condition: service_started }
