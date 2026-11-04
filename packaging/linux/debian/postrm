@@ -1,0 +1,12 @@
+#!/bin/sh
+# Removing NETRA keeps its data (/var/lib/netra) and its database; purging removes the
+# configuration too. Delete the data by hand once it is no longer needed:
+#   rm -rf /var/lib/netra && sudo -u postgres dropdb netra && sudo -u postgres dropuser netra
+set -e
+if [ "$1" = "purge" ]; then
+    rm -rf /etc/netra
+fi
+if command -v systemctl >/dev/null && [ -d /run/systemd/system ]; then
+    systemctl daemon-reload >/dev/null 2>&1 || true
+fi
+exit 0

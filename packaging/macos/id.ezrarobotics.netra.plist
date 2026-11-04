@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>id.ezrarobotics.netra</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Library/NETRA/netra</string>
+    <string>-config</string>
+    <string>/Library/Application Support/NETRA/netra.env</string>
+    <string>serve</string>
+  </array>
+  <key>UserName</key>
+  <string>_netra</string>
+  <key>WorkingDirectory</key>
+  <string>/Library/Application Support/NETRA</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ExitTimeOut</key>
+  <integer>45</integer>
+  <key>StandardOutPath</key>
+  <string>/Library/Application Support/NETRA/logs/netra.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Library/Application Support/NETRA/logs/netra.log</string>
+</dict>
+</plist>

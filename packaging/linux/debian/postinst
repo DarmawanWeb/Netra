@@ -1,0 +1,51 @@
+#!/bin/sh
+# NETRA: a system user, its directories, a PostgreSQL role and database, the service.
+set -e
+
+[ "$1" = "configure" ] || exit 0
+
+ENV=/etc/netra/netra.env
+
+if ! getent passwd netra >/dev/null; then
+    adduser --system --group --home /var/lib/netra --no-create-home --gecos "NETRA" netra >/dev/null
+fi
+install -d -o netra -g netra -m 0750 /var/lib/netra
+chown root:netra /etc/netra "$ENV"
+chmod 0750 /etc/netra
+chmod 0640 "$ENV"
+
+# The database: a role and a database in the local PostgreSQL, once. The service connects through
+# the local socket as the system user netra (peer authentication), so no password is stored.
+if ! grep -q '^NETRA_DATABASE_URL=.\+' "$ENV"; then
+    if command -v systemctl >/dev/null && [ -d /run/systemd/system ]; then
+        systemctl start postgresql >/dev/null 2>&1 || true
+    fi
+    for _ in $(seq 1 30); do
+        runuser -u postgres -- psql -qAtc 'SELECT 1' >/dev/null 2>&1 && break
+        sleep 1
+    done
+    if ! runuser -u postgres -- psql -qAtc "SELECT 1 FROM pg_roles WHERE rolname = 'netra'" | grep -q 1; then
+        runuser -u postgres -- psql -qc "CREATE ROLE netra WITH LOGIN" >/dev/null
+    fi
+    if ! runuser -u postgres -- psql -qAtc "SELECT 1 FROM pg_database WHERE datname = 'netra'" | grep -q 1; then
+        runuser -u postgres -- createdb -O netra netra
+    fi
+    sed -i "s|^NETRA_DATABASE_URL=.*|NETRA_DATABASE_URL=postgres://netra@/netra?host=/var/run/postgresql\\&sslmode=disable|" "$ENV"
+fi
+
+if command -v systemctl >/dev/null && [ -d /run/systemd/system ]; then
+    systemctl daemon-reload
+    systemctl enable netra >/dev/null 2>&1
+    systemctl restart netra
+fi
+
+PORT=$(sed -n 's/^NETRA_ADDR=.*:\([0-9]*\)$/\1/p' "$ENV")
+cat <<MSG
+
+  NETRA is installed. Open http://$(hostname -I 2>/dev/null | cut -d' ' -f1 || hostname):${PORT:-8080}
+  in a browser to finish the setup (installation ID, administrator, license).
+  Configuration: $ENV   Data and backups: /var/lib/netra
+  Service: systemctl status netra   Logs: journalctl -u netra -f
+
+MSG
+exit 0
