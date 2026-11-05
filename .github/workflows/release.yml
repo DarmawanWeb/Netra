@@ -1,0 +1,212 @@
+name: release
+
+# A tag vX.Y.Z builds what clients install: the netra binaries with the dashboard inside, the
+# Ubuntu/Debian packages, the Windows installer, the macOS package and the Docker image, and
+# publishes them as a GitHub release. Needs the secret NETRA_REPO_TOKEN (read access to
+# netra-fleet-be and netra-fleet-fe) for the submodules.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version, e.g. v1.2.0-rc1 (artifacts only; no release is published)"
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  VERSION: ${{ github.event.inputs.version || github.ref_name }}
+  POSTGRES_WINDOWS: https://get.enterprisedb.com/postgresql/postgresql-16.4-1-windows-x64-binaries.zip
+  POSTGRES_MACOS: https://get.enterprisedb.com/postgresql/postgresql-16.4-1-osx-binaries.zip
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.NETRA_REPO_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: fe/package-lock.json
+      - run: npm ci --no-audit --no-fund && npm run build
+        working-directory: fe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: fe/out
+
+  binaries:
+    needs: web
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [linux/amd64, linux/arm64, windows/amd64, darwin/amd64, darwin/arm64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.NETRA_REPO_TOKEN }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: be/go.sum
+      - uses: actions/download-artifact@v4
+        with:
+          name: web
+          path: be/internal/web/dist
+      - name: build
+        working-directory: be
+        run: |
+          GOOS=${TARGET%/*}; GOARCH=${TARGET#*/}
+          EXT=""; [ "$GOOS" = windows ] && EXT=.exe
+          PKG=github.com/DarmawanWeb/netra-fleet-be/internal/version
+          CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -tags webui -trimpath \
+            -ldflags "-s -w -X $PKG.Version=$VERSION -X $PKG.Commit=$(git rev-parse --short HEAD)" \
+            -o "../out/netra-$GOOS-$GOARCH$EXT" ./cmd/netra
+        env:
+          TARGET: ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: netra-${{ strategy.job-index }}
+          path: out/*
+
+  deb:
+    needs: binaries
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: netra-*
+          merge-multiple: true
+          path: bin
+      - run: packaging/linux/build-deb.sh "bin/netra-linux-${{ matrix.arch }}" "$VERSION" "${{ matrix.arch }}" dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.arch }}
+          path: dist/*.deb
+
+  windows:
+    needs: binaries
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: netra-*
+          merge-multiple: true
+          path: bin
+      - name: stage
+        shell: pwsh
+        run: packaging/windows/stage.ps1 -Netra bin/netra-windows-amd64.exe -Out stage -PostgresZip $env:POSTGRES_WINDOWS
+      - name: installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $v = $env:VERSION.TrimStart('v')
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DVersion=$v" "/DStage=$PWD\stage" "/Odist" packaging\windows\netra.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*.exe
+
+  macos:
+    needs: binaries
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: netra-*
+          merge-multiple: true
+          path: bin
+      - name: package
+        run: |
+          lipo -create -output netra bin/netra-darwin-amd64 bin/netra-darwin-arm64
+          curl -fsSL -o pgsql.zip "$POSTGRES_MACOS" && unzip -q pgsql.zip
+          rm -rf pgsql/pgAdmin* pgsql/stackbuilder* pgsql/include pgsql/doc
+          packaging/macos/build-pkg.sh netra "$VERSION" pgsql dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*.pkg
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.NETRA_REPO_TOKEN }}
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name == 'push' }}
+          build-args: |
+            VERSION=${{ env.VERSION }}
+            COMMIT=${{ github.sha }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/netra:${{ env.VERSION }}
+            ghcr.io/${{ github.repository_owner }}/netra:main
+          cache-from: type=gha,scope=netra
+          cache-to: type=gha,mode=max,scope=netra
+
+  release:
+    if: github.event_name == 'push'
+    needs: [binaries, deb, windows, macos, image]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: netra-*
+          merge-multiple: true
+          path: assets
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: deb-*
+          merge-multiple: true
+          path: assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows
+          path: assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos
+          path: assets
+      - name: checksums
+        working-directory: assets
+        run: |
+          sha256sum * > ../SHA256SUMS && mv ../SHA256SUMS .
+          cat SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: NETRA ${{ env.VERSION }}
+          prerelease: ${{ contains(env.VERSION, '-') }}
+          generate_release_notes: true
+          files: |
+            assets/netra_*.deb
+            assets/NETRA-Setup-*.exe
+            assets/NETRA-*-macos.pkg
+            assets/netra-linux-*
+            assets/netra-windows-*
+            assets/netra-darwin-*
+            assets/SHA256SUMS

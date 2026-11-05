@@ -434,10 +434,11 @@ cmd_doctor() {
     else
         bad "model $model missing (ollama pull $model)"
     fi
-    if docker compose exec -T ai python -c "import urllib.request;urllib.request.urlopen('http://host.docker.internal:11434/api/tags',timeout=3)" >/dev/null 2>&1; then
-        ok "AI container reaches Ollama"
+    # NETRA calls Ollama from its container (the netra image has no shell; the db one has wget).
+    if docker compose exec -T db wget -q -O /dev/null -T 3 http://host.docker.internal:11434/api/tags >/dev/null 2>&1; then
+        ok "containers reach Ollama"
     else
-        bad "AI container cannot reach Ollama: brew services stop ollama && OLLAMA_HOST=0.0.0.0 ollama serve"
+        bad "containers cannot reach Ollama: brew services stop ollama && OLLAMA_HOST=0.0.0.0 ollama serve"
     fi
 
     title "Stack"

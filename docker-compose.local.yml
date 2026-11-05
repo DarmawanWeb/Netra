@@ -7,6 +7,8 @@ services:
     environment:
       NETRA_PUBLIC_URL: ${NETRA_PUBLIC_URL:-http://localhost}
       NETRA_ALLOWED_ORIGIN: "*"
+      NETRA_OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      NETRA_AI_TIMEOUT: "120"
 
   ai:
     pull_policy: build
@@ -17,9 +19,6 @@ services:
 
   ollama:
     profiles: [server] # not started locally
-
-  web:
-    pull_policy: build
 
   caddy:
     ports: !override ["${NETRA_LAN_PORT:-80}:80"]

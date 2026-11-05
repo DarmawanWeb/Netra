@@ -5,9 +5,10 @@ connect to it directly, with or without internet. The vision model runs in a nat
 macOS so it can use the Apple GPU.
 
 ```
- Robot(s) ── LAN ──> Mac :80 (Caddy) ─┬─ /api, robot WebSocket ─> api ─┬─> TimescaleDB
-                                       ├─ /grafana ─> grafana          ├─> NATS
-                                       └─ /* ─> web (dashboard)        └─> ai ─> Ollama (native, Metal GPU)
+ Robot(s) ── LAN ──> Mac :80 (Caddy) ─┬─ /grafana ─> grafana
+                                       └─ /* ─> netra (API + dashboard) ─┬─> TimescaleDB
+                                                                         ├─> NATS
+                                                                         └─> Ollama (native, Metal GPU)
 ```
 
 ## Requirements
@@ -138,7 +139,7 @@ Third-party apps use the integration API through the same hostname: docs at
 | `scripts/local.sh start` | start the images built before, without internet (demo day) |
 | `scripts/local.sh status` | containers and API health |
 | `scripts/local.sh lan` | the Mac's address on every network, for `CC_URL` and phones |
-| `scripts/local.sh logs [api\|ai\|web\|db\|...]` | follow logs |
+| `scripts/local.sh logs [api\|db\|caddy\|...]` | follow logs |
 | `scripts/local.sh doctor` | check Docker, Ollama, model, AI link, LAN reachability, firewall, sleep |
 | `scripts/local.sh export [file]` | database, photos and floor plans in one file |
 | `scripts/local.sh import <file>` | replace all data here with an export (asks first) |
@@ -168,7 +169,7 @@ After editing `.env`: `scripts/local.sh up`.
 
 | Symptom | Fix |
 |---|---|
-| `doctor`: AI container cannot reach Ollama | `brew services stop ollama && OLLAMA_HOST=0.0.0.0 ollama serve` |
+| `doctor`: containers cannot reach Ollama | `brew services stop ollama && OLLAMA_HOST=0.0.0.0 ollama serve` |
 | Robot stays offline | on the robot `curl http://<address>/healthz`; no answer: other network, venue Wi-Fi isolating devices, or the macOS firewall (allow Docker); `401` in `logs api`: wrong `CC_TOKEN` |
 | Port 80 already in use | stop the other web server (`sudo lsof -i :80`) or set `NETRA_LAN_PORT` |
 | `git pull` refuses: untracked `docker-compose.tunnel.yml` / `Caddyfile.tunnel` | delete the two hand-made files, the repository has them now |

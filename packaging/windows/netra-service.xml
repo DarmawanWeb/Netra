@@ -1,0 +1,24 @@
+<!-- NETRA as a Windows service, through WinSW 2 (netra-service.exe next to netra.exe). -->
+<service>
+  <id>netra</id>
+  <name>NETRA</name>
+  <description>NETRA patrol command center</description>
+  <executable>%BASE%\netra.exe</executable>
+  <arguments>-config "%ProgramData%\NETRA\netra.env" serve</arguments>
+  <workingdirectory>%ProgramData%\NETRA</workingdirectory>
+  <startmode>Automatic</startmode>
+  <delayedAutoStart>true</delayedAutoStart>
+  <onfailure action="restart" delay="10 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>45 sec</stoptimeout>
+  <logpath>%ProgramData%\NETRA\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+  <!-- PostgreSQL does not run under an administrator account; Network Service is enough. -->
+  <serviceaccount>
+    <domain>NT AUTHORITY</domain>
+    <user>NetworkService</user>
+  </serviceaccount>
+</service>
