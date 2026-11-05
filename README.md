@@ -113,12 +113,14 @@ change `CC_URL` ([Demo: the command center on a laptop](LOCAL.md#demo-the-comman
 ```bash
 git clone --recursive git@github.com:DarmawanWeb/Netra.git && cd Netra
 cp .env.example .env            # domain, passwords, Telegram, AI model
+cp ~/bekasi.lic license/netra.lic   # the client's license
 docker compose up -d --build    # or with CI images: docker compose pull && docker compose up -d
 docker compose exec ollama ollama pull qwen2.5vl:7b
 ```
 
-Then open `https://<domain>`, log in as `NETRA_ADMIN_USER`, add users (roles viewer, operator,
-supervisor, admin), register robots and upload the floor plan. Grafana is at `/grafana`.
+Put the license in `license/netra.lic` ([License](#license)). Then open `https://<domain>`, log in
+as `NETRA_ADMIN_USER`, add users (roles viewer, operator, supervisor, admin), register robots and
+upload the floor plan. Grafana is at `/grafana`.
 
 <details>
 <summary><b>Updates, backups</b></summary>
@@ -132,6 +134,21 @@ Backups: daily `pg_dump` into `backups/` (kept `BACKUP_KEEP_DAYS`); restore with
 Anomaly photos and floor plans are in the `api-data` volume.
 
 </details>
+
+## License
+
+One NETRA for every client: the license of a deployment decides its **edition** (mall,
+substation), its **tier** (basic, pro, enterprise), the **modules** (anomaly detection, crowd
+analytics, substation inspection, report exports, Telegram alerts, audit log, server AI
+verification, integration API, multi-site sync), the **robot limit** and the **branding** (name,
+colours, logo). Put the license from EZRA Robotics in `license/netra.lic` and
+`docker compose up -d api`, or install it in **Settings › License**
+([license/README.md](license/README.md)). Without one, the core runs with one robot.
+
+Updating a deployment from before licensing: install its license (a mall:
+`-edition mall -tier enterprise`, or what the client bought) together with the update, or the
+anomaly, crowd and other modules disappear until it is installed. How licenses are made:
+[netra-fleet-be licensing](https://github.com/DarmawanWeb/netra-fleet-be/blob/main/docs/licensing.md).
 
 ## Integration API
 
@@ -148,7 +165,8 @@ interactive docs at `https://<domain>/api/ext/docs` (OpenAPI: `/api/ext/v1/opena
 |---|---|
 | Operators, security staff, supervisors | [Panduan Operator (PDF, Indonesian)](docs/NETRA-Panduan-Operator.pdf): safety, daily start with the Genisom L1W, dashboard, patrols, validation, schedules, routes, reports, troubleshooting |
 | Running NETRA on a Mac | [LOCAL.md](LOCAL.md) |
-| Backend developers | [netra-fleet-be/docs](https://github.com/DarmawanWeb/netra-fleet-be/tree/main/docs): architecture, dashboard API, database, configuration, development, AI service |
+| Backend developers | [netra-fleet-be/docs](https://github.com/DarmawanWeb/netra-fleet-be/tree/main/docs): architecture, dashboard API, database, licensing, configuration, development, AI service |
+| Licenses (EZRA Robotics) | [licensing](https://github.com/DarmawanWeb/netra-fleet-be/blob/main/docs/licensing.md): editions, tiers, modules, signing key, issuing; [license/README.md](license/README.md) on a server |
 | Dashboard developers | [netra-fleet-fe/docs](https://github.com/DarmawanWeb/netra-fleet-fe/tree/main/docs): architecture, development |
 | Third-party integrators | [INTEGRATION.md](https://github.com/DarmawanWeb/netra-fleet-be/blob/main/INTEGRATION.md) and `/api/ext/docs` on the server |
 | Robot side | [Pashupati](https://github.com/DarmawanRobotics/Pashupati) ([robot API](https://github.com/DarmawanRobotics/Pashupati/blob/main/src/robot_fleet/API.md)) |
