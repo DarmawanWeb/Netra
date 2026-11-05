@@ -1,0 +1,4 @@
+#!/bin/sh
+# An upgrade replaces the program: stop the running service first.
+launchctl bootout system/id.ezrarobotics.netra 2>/dev/null || true
+exit 0

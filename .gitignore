@@ -2,3 +2,4 @@
 backups/
 exports/
 .awake.pid
+license/*.lic

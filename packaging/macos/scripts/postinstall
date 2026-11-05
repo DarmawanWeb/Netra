@@ -1,0 +1,44 @@
+#!/bin/sh
+# NETRA on macOS: a hidden system user, its folders, the configuration once, the service.
+set -e
+SUPPORT="/Library/Application Support/NETRA"
+
+if ! dscl . -read /Users/_netra >/dev/null 2>&1; then
+    ID=480
+    while dscl . -list /Users UniqueID | awk '{print $2}' | grep -qx "$ID" ||
+          dscl . -list /Groups PrimaryGroupID | awk '{print $2}' | grep -qx "$ID"; do
+        ID=$((ID + 1))
+    done
+    dscl . -create /Groups/_netra PrimaryGroupID "$ID"
+    dscl . -create /Users/_netra UniqueID "$ID"
+    dscl . -create /Users/_netra PrimaryGroupID "$ID"
+    dscl . -create /Users/_netra UserShell /usr/bin/false
+    dscl . -create /Users/_netra NFSHomeDirectory /var/empty
+    dscl . -create /Users/_netra RealName "NETRA"
+    dscl . -create /Users/_netra IsHidden 1
+fi
+
+mkdir -p "$SUPPORT/data" "$SUPPORT/logs"
+if [ ! -f "$SUPPORT/netra.env" ]; then
+    cat > "$SUPPORT/netra.env" <<ENV
+# NETRA configuration. After a change: sudo launchctl kickstart -k system/id.ezrarobotics.netra
+NETRA_ADDR=:8080
+# Address robots and phones use to reach this Mac, e.g. http://$(scutil --get LocalHostName 2>/dev/null || hostname).local:8080
+NETRA_PUBLIC_URL=
+NETRA_TZ=Asia/Jakarta
+NETRA_LANG=id
+NETRA_DATA_DIR=$SUPPORT/data
+NETRA_PG_BIN=/Library/NETRA/pgsql/bin
+NETRA_PG_PORT=5433
+NETRA_LICENSE_FILE=$SUPPORT/license.lic
+NETRA_BACKUP_KEEP_DAYS=14
+# NETRA_TLS=self-signed
+# NETRA_OLLAMA_URL=http://localhost:11434
+ENV
+fi
+chown -R _netra:_netra "$SUPPORT"
+chmod 750 "$SUPPORT"
+
+launchctl bootstrap system /Library/LaunchDaemons/id.ezrarobotics.netra.plist
+echo "NETRA is installed: open http://localhost:8080 to finish the setup."
+exit 0

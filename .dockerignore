@@ -1,0 +1,13 @@
+.git
+**/.git
+fe/node_modules
+fe/.next
+fe/out
+be/bin
+be/internal/web/dist
+be/ai
+backups
+exports
+license
+dist
+.env

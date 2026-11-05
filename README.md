@@ -76,21 +76,23 @@ flowchart LR
     R <-- WebSocket + HTTPS --> C[Caddy<br/>HTTPS]
     B[Browser<br/>operators] --> C
     P[Third-party app] -- OAuth2 --> C
-    C --> API[netra-api<br/>Go]
-    C --> WEB[netra-web<br/>Next.js]
-    API --> DB[(TimescaleDB)]
+    C --> API[netra<br/>Go service + dashboard]
+    API --> DB[(PostgreSQL / TimescaleDB)]
     API --> NATS[NATS JetStream]
-    API --> AI[netra-ai<br/>FastAPI] --> OL[Ollama<br/>vision-language model]
+    API --> OL[Ollama<br/>vision-language model]
     API --> TG[Telegram]
     PR[Prometheus + Grafana] -.-> API
 ```
 
 | Path | |
 |---|---|
-| [`be/`](https://github.com/DarmawanWeb/netra-fleet-be) | `netra-api` (Go) and `netra-ai` (FastAPI, vision-language model) |
-| [`fe/`](https://github.com/DarmawanWeb/netra-fleet-fe) | `netra-web` (Next.js dashboard) |
+| [`be/`](https://github.com/DarmawanWeb/netra-fleet-be) | the `netra` service (Go); `netra-ai` (FastAPI), now optional |
+| [`fe/`](https://github.com/DarmawanWeb/netra-fleet-fe) | the dashboard (Next.js static export, built into `netra`) |
+| `Dockerfile` | the single image `netra`: the dashboard built into the service |
+| `packaging/` | the installers: Linux `.deb` with systemd, Windows (Inno Setup, WinSW), macOS `.pkg` |
+| `INSTALL.md`, `INSTALL.id.md` | the client's install guide |
 | `docker-compose.yml` | the whole stack |
-| `Caddyfile` | HTTPS, `/api` to the API, `/grafana` to Grafana, the rest to the dashboard |
+| `Caddyfile` | HTTPS, `/grafana` to Grafana, everything else to `netra` (API and dashboard) |
 | `monitoring/` | Prometheus scrape config, Grafana datasources (Prometheus, TimescaleDB) and dashboard |
 | `scripts/deploy.sh` | server: pull, update submodules, pull images, restart, pull the AI model |
 | `docker-compose.local.yml`, `Caddyfile.local`, `.env.local.example`, `scripts/local.sh` | running on a Mac ([LOCAL.md](LOCAL.md)) |
@@ -99,6 +101,14 @@ flowchart LR
 
 The robots run [Pashupati](https://github.com/DarmawanRobotics/Pashupati); the handheld is
 [Pashupati Controller](https://github.com/DarmawanRobotics/PashupatiController).
+
+## Install at a client
+
+One application with its database, installed like any other program: the Windows installer, the
+Ubuntu/Debian package or the macOS package of a [release](docs/release.md). The browser then opens
+the setup (installation ID, administrator, license). Client guide: **[INSTALL.md](INSTALL.md)**
+([Indonesian](INSTALL.id.md)); what EZRA hands over and how a license is activated:
+[docs/client-kit.md](docs/client-kit.md).
 
 ## Run on a Mac
 
@@ -113,12 +123,14 @@ change `CC_URL` ([Demo: the command center on a laptop](LOCAL.md#demo-the-comman
 ```bash
 git clone --recursive git@github.com:DarmawanWeb/Netra.git && cd Netra
 cp .env.example .env            # domain, passwords, Telegram, AI model
+cp ~/bekasi.lic license/netra.lic   # the client's license
 docker compose up -d --build    # or with CI images: docker compose pull && docker compose up -d
 docker compose exec ollama ollama pull qwen2.5vl:7b
 ```
 
-Then open `https://<domain>`, log in as `NETRA_ADMIN_USER`, add users (roles viewer, operator,
-supervisor, admin), register robots and upload the floor plan. Grafana is at `/grafana`.
+Put the license in `license/netra.lic` ([License](#license)). Then open `https://<domain>`, log in
+as `NETRA_ADMIN_USER`, add users (roles viewer, operator, supervisor, admin), register robots and
+upload the floor plan. Grafana is at `/grafana`.
 
 <details>
 <summary><b>Updates, backups</b></summary>
@@ -132,6 +144,21 @@ Backups: daily `pg_dump` into `backups/` (kept `BACKUP_KEEP_DAYS`); restore with
 Anomaly photos and floor plans are in the `api-data` volume.
 
 </details>
+
+## License
+
+One NETRA for every client: the license of a deployment decides its **edition** (mall,
+substation), its **tier** (basic, pro, enterprise), the **modules** (anomaly detection, crowd
+analytics, substation inspection, report exports, Telegram alerts, audit log, server AI
+verification, integration API, multi-site sync), the **robot limit** and the **branding** (name,
+colours, logo). Put the license from EZRA Robotics in `license/netra.lic` and
+`docker compose up -d api`, or install it in **Settings › License**
+([license/README.md](license/README.md)). Without one, the core runs with one robot.
+
+Updating a deployment from before licensing: install its license (a mall:
+`-edition mall -tier enterprise`, or what the client bought) together with the update, or the
+anomaly, crowd and other modules disappear until it is installed. How licenses are made:
+[netra-fleet-be licensing](https://github.com/DarmawanWeb/netra-fleet-be/blob/main/docs/licensing.md).
 
 ## Integration API
 
@@ -148,7 +175,11 @@ interactive docs at `https://<domain>/api/ext/docs` (OpenAPI: `/api/ext/v1/opena
 |---|---|
 | Operators, security staff, supervisors | [Panduan Operator (PDF, Indonesian)](docs/NETRA-Panduan-Operator.pdf): safety, daily start with the Genisom L1W, dashboard, patrols, validation, schedules, routes, reports, troubleshooting |
 | Running NETRA on a Mac | [LOCAL.md](LOCAL.md) |
-| Backend developers | [netra-fleet-be/docs](https://github.com/DarmawanWeb/netra-fleet-be/tree/main/docs): architecture, dashboard API, database, configuration, development, AI service |
+| Backend developers | [netra-fleet-be/docs](https://github.com/DarmawanWeb/netra-fleet-be/tree/main/docs): architecture, dashboard API, database, licensing, configuration, development, AI service |
+| Client administrators | [INSTALL.md](INSTALL.md) ([Indonesian](INSTALL.id.md)): install, first-time setup, license, robots, backups, updates, recovery |
+| EZRA Robotics: delivery | [client kit](docs/client-kit.md): what a client gets, activation, renewal |
+| EZRA Robotics: releases | [releasing](docs/release.md): the release workflow, installers, building by hand |
+| Licenses (EZRA Robotics) | [licensing](https://github.com/DarmawanWeb/netra-fleet-be/blob/main/docs/licensing.md): editions, tiers, modules, signing key, issuing; [license/README.md](license/README.md) on a server |
 | Dashboard developers | [netra-fleet-fe/docs](https://github.com/DarmawanWeb/netra-fleet-fe/tree/main/docs): architecture, development |
 | Third-party integrators | [INTEGRATION.md](https://github.com/DarmawanWeb/netra-fleet-be/blob/main/INTEGRATION.md) and `/api/ext/docs` on the server |
 | Robot side | [Pashupati](https://github.com/DarmawanRobotics/Pashupati) ([robot API](https://github.com/DarmawanRobotics/Pashupati/blob/main/src/robot_fleet/API.md)) |
