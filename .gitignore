@@ -3,3 +3,7 @@ backups/
 exports/
 .awake.pid
 license/*.lic
+
+# Development (scripts/dev.sh)
+.dev/
+netra.code-workspace
