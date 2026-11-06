@@ -4,9 +4,10 @@
 
 # NETRA
 
-**Patrol command center for Pashupati robots: the live fleet on the mall map, patrols and
-schedules, AI anomaly detection with operator validation and Telegram alerts, crowd analytics,
-reports, and a read-only API for third-party applications. By EZRA Robotics.**
+**Patrol command center for EZRA Robotics' robots, in malls and in substations: the live fleet
+on a floor plan, the robot's own map or a GPS site, patrols and schedules, AI anomaly detection,
+substation thermal and partial discharge inspection rated after NETA, crowd analytics, reports and
+an API for third-party applications. One application, licensed per client.**
 
 [![validate](https://img.shields.io/github/actions/workflow/status/DarmawanWeb/Netra/validate.yml?branch=main&label=validate&logo=github)](https://github.com/DarmawanWeb/Netra/actions/workflows/validate.yml)
 [![backend](https://img.shields.io/github/actions/workflow/status/DarmawanWeb/netra-fleet-be/ci.yml?branch=main&label=backend&logo=github)](https://github.com/DarmawanWeb/netra-fleet-be/actions/workflows/ci.yml)
@@ -19,18 +20,19 @@ reports, and a read-only API for third-party applications. By EZRA Robotics.**
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20Indonesia-FF9F43)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
-[Features](#features) · [System](#system) · [Run on a Mac](#run-on-a-mac) ·
-[Deploy](#deploy-on-a-server) · [Integration API](#integration-api) · [Documentation](#documentation) ·
-[Develop](#develop)
+[Features](#features) · [System](#system) · [Install](#install-at-a-client) · [Run on a Mac](#run-on-a-mac) ·
+[Deploy](#deploy-on-a-server) · [License](#license) · [Integration API](#integration-api) ·
+[Documentation](#documentation) · [Develop](#develop)
 
 </div>
 
 ---
 
-Robots patrol mall corridors on recorded routes and inspect the floor at their stop points. NETRA
-is where people watch them, start and schedule patrols, and decide what the robots found. This
-repository is the **deployment root**: the infrastructure at the top level, the application in two
-submodules.
+Robots patrol on recorded routes: mall corridors, where they look for trash, spills and damage,
+and substation yards, where they take thermal and acoustic captures of the equipment at their
+stops. NETRA is where people watch them, start and schedule patrols, and decide what the robots
+found. This repository is the **deployment root**: the infrastructure at the top level, the
+application in two submodules.
 
 ## Features
 
@@ -53,6 +55,13 @@ submodules.
 - Per category: confirm at once and alert a Telegram group (trash to the cleaning crew), or wait
   for an operator to confirm or reject.
 
+**Substation inspection**
+- Equipment by bay as a single-line diagram, each piece in its condition; inspection points on the
+  robots' routes with the camera pose and the regions to measure, drawn on the thermal image.
+- Thermal readings rated after ANSI/NETA MTS Table 100.18 (against similar components and the
+  ambient air) and partial discharge levels; findings from the first abnormal reading to resolved,
+  with acknowledge, notes, trends and Telegram alerts.
+
 **Analyse**
 - Crowd heatmaps and hourly and daily peaks from the people the robots see.
 - PDF and Excel reports per patrol and per period, in English or Indonesian.
@@ -73,7 +82,11 @@ flowchart LR
     subgraph Site[Mall]
         R[Genisom L1W<br/>Pashupati stack] <-- Wi-Fi --> H[Handheld<br/>Pashupati Controller]
     end
+    subgraph GI[Substation]
+        S[Deep Robotics M20<br/>HotDog: thermal + PD]
+    end
     R <-- WebSocket + HTTPS --> C[Caddy<br/>HTTPS]
+    S <-- WebSocket + HTTPS --> C
     B[Browser<br/>operators] --> C
     P[Third-party app] -- OAuth2 --> C
     C --> API[netra<br/>Go service + dashboard]
@@ -95,12 +108,14 @@ flowchart LR
 | `Caddyfile` | HTTPS, `/grafana` to Grafana, everything else to `netra` (API and dashboard) |
 | `monitoring/` | Prometheus scrape config, Grafana datasources (Prometheus, TimescaleDB) and dashboard |
 | `scripts/deploy.sh` | server: pull, update submodules, pull images, restart, pull the AI model |
+| `scripts/dev.sh`, `dev/demo/`, `DEVELOPMENT.md` | development: hot reload, development licenses, simulated robots and demo data ([DEVELOPMENT.md](DEVELOPMENT.md)) |
 | `docker-compose.local.yml`, `Caddyfile.local`, `.env.local.example`, `scripts/local.sh` | running on a Mac ([LOCAL.md](LOCAL.md)) |
 | `docker-compose.tunnel.yml`, `Caddyfile.tunnel` | a Mac behind a Cloudflare Tunnel, LAN port kept for robots |
 | `docs/` | [operator guide (PDF)](docs/NETRA-Panduan-Operator.pdf) and its LaTeX source |
 
-The robots run [Pashupati](https://github.com/DarmawanRobotics/Pashupati); the handheld is
-[Pashupati Controller](https://github.com/DarmawanRobotics/PashupatiController).
+The mall robots run [Pashupati](https://github.com/DarmawanRobotics/Pashupati), with the
+handheld [Pashupati Controller](https://github.com/DarmawanRobotics/PashupatiController); the
+substation robot runs [HotDog](https://github.com/DarmawanRobotics/HotDog).
 
 ## Install at a client
 
@@ -175,6 +190,7 @@ interactive docs at `https://<domain>/api/ext/docs` (OpenAPI: `/api/ext/v1/opena
 |---|---|
 | Operators, security staff, supervisors | [Panduan Operator (PDF, Indonesian)](docs/NETRA-Panduan-Operator.pdf): safety, daily start with the Genisom L1W, dashboard, patrols, validation, schedules, routes, reports, troubleshooting |
 | Running NETRA on a Mac | [LOCAL.md](LOCAL.md) |
+| Developers: the working setup | [DEVELOPMENT.md](DEVELOPMENT.md): `scripts/dev.sh`, hot reload, development licenses, demo robots, VS Code |
 | Backend developers | [netra-fleet-be/docs](https://github.com/DarmawanWeb/netra-fleet-be/tree/main/docs): architecture, dashboard API, database, licensing, configuration, development, AI service |
 | Client administrators | [INSTALL.md](INSTALL.md) ([Indonesian](INSTALL.id.md)): install, first-time setup, license, robots, backups, updates, recovery |
 | EZRA Robotics: delivery | [client kit](docs/client-kit.md): what a client gets, activation, renewal |
@@ -187,12 +203,19 @@ interactive docs at `https://<domain>/api/ext/docs` (OpenAPI: `/api/ext/v1/opena
 ## Develop
 
 ```bash
-git submodule update --init --recursive
-lefthook install          # in the root and in each submodule
+git clone --recurse-submodules git@github.com:DarmawanWeb/Netra.git && cd Netra
+scripts/dev.sh setup && scripts/dev.sh up && scripts/dev.sh demo
+code netra.code-workspace
 ```
 
-The `validate` workflow checks the compose files, the Caddyfiles and the shell scripts on every
-push; each submodule has its own CI (lint, tests, build) that publishes its images to
-`ghcr.io/darmawanweb` on `main` and `v*` tags. See `be/README.md` and `fe/README.md`.
+The API reloads on save, the dashboard runs on `next dev`, and `scripts/dev.sh license <profile>`
+switches between the editions, tiers and map modes (`gardu`, `mall`, `all`, `none`, ...) on the
+fly. **[DEVELOPMENT.md](DEVELOPMENT.md)** covers the commands, licenses, demo data, VS Code,
+branches and pull requests.
+
+The `validate` workflow checks the compose files, the Caddyfiles and the shell scripts on pull
+requests and on `main`; each submodule has its own CI (lint, tests, build) that publishes its
+images to `ghcr.io/darmawanweb` on `main` and `v*` tags. `lefthook install` in the root and in each
+submodule adds the same checks as Git hooks.
 
 Released under the [Apache License 2.0](LICENSE).
