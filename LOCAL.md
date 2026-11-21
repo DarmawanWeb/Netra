@@ -213,6 +213,7 @@ After editing `.env`: `scripts/local.sh up`.
 |---|---|
 | `up` fails at `COPY be/go.mod` or `COPY fe/package.json`: not found | `be/` and `fe/` are empty: `git submodule update --init --recursive` (an older `local.sh` did not fetch them) |
 | `be: building your checkout, not the commit NETRA records` | you work in that submodule, so `up` leaves it alone; `git submodule update -- be` builds the recorded commit |
+| `API not healthy`, its log: `password authentication failed for user "netra"` | the database volume comes from an earlier install and keeps that install's password; `up` and `start` give it the password of `.env` now. With an older `local.sh`: `printf "ALTER USER netra PASSWORD '%s';\n" "$(grep '^POSTGRES_PASSWORD=' .env \| cut -d= -f2-)" \| docker compose exec -T db psql -X -q -U netra -d postgres`, then `docker compose restart api` |
 | `doctor`: containers cannot reach Ollama | `brew services stop ollama && OLLAMA_HOST=0.0.0.0 ollama serve` |
 | Robot stays offline | on the robot `curl http://<address>/healthz`; no answer: other network, venue Wi-Fi isolating devices, or the macOS firewall (allow Docker); `401` in `logs api`: wrong `CC_TOKEN` |
 | `port … is used by …` at `up` | another stack or program has the port: set `NETRA_LAN_PORT` / `NETRA_TUNNEL_PORT` ([Next to other stacks](#next-to-other-stacks)) |
