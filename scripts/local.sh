@@ -255,6 +255,30 @@ wait_healthy() {
     return 1
 }
 
+# The API did not come up: show why before giving up.
+api_failed() {
+    printf '\n%sLast lines of the API:%s\n' "$D" "$N" >&2
+    docker compose logs --no-log-prefix --tail=12 api >&2 || true
+    die "API not healthy: scripts/local.sh logs api, scripts/local.sh doctor"
+}
+
+# PostgreSQL keeps the password of the first start of its volume: a database from an earlier
+# install (another .env, another checkout) refuses the password of this .env and the API never
+# starts. The .env is the reference: give the database its password at every start (local socket,
+# no password needed there). Quiet when the database is not up.
+sync_db_password() {
+    local pw
+    pw=$(envget POSTGRES_PASSWORD)
+    [[ -n $pw ]] || return 0
+    for _ in $(seq 60); do
+        docker compose exec -T db pg_isready -U netra -d netra >/dev/null 2>&1 && break
+        sleep 1
+    done
+    printf "ALTER USER netra PASSWORD '%s';\n" "${pw//\'/\'\'}" |
+        docker compose exec -T db psql -X -q -v ON_ERROR_STOP=1 -U netra -d postgres >/dev/null 2>&1 ||
+        warn "could not set the database password from .env (scripts/local.sh logs db)"
+}
+
 cmd_setup() {
     title "Tools"
     command -v docker >/dev/null || die "Docker Desktop is not installed: https://www.docker.com/products/docker-desktop/"
@@ -312,7 +336,8 @@ cmd_up() {
     need_sources
     title "Starting NETRA Fleet (first build takes a few minutes)"
     docker compose up -d --build --remove-orphans
-    wait_healthy || die "API not healthy: scripts/local.sh logs api"
+    sync_db_password
+    wait_healthy || api_failed
     cmd_addresses
 }
 
@@ -324,7 +349,8 @@ cmd_start() {
     start_ollama || warn "Ollama is not running: final detection falls back to the robot result"
     title "Starting NETRA Fleet (no rebuild)"
     docker compose up -d --no-build --remove-orphans || die "images missing: run scripts/local.sh up once with internet"
-    wait_healthy || die "API not healthy: scripts/local.sh logs api"
+    sync_db_password
+    wait_healthy || api_failed
     cmd_addresses
 }
 
