@@ -23,8 +23,7 @@ macOS so it can use the Apple GPU.
 
 ```bash
 cd Netra
-git submodule update --init --recursive   # be/ and fe/
-scripts/local.sh setup                    # checks, .env with generated passwords, Ollama + model
+scripts/local.sh setup                    # checks, be/ and fe/, .env with generated passwords, Ollama + model
 scripts/local.sh up                       # builds and starts everything (first build: a few minutes)
 scripts/local.sh awake                    # keep the Mac awake for schedules and robots
 ```
@@ -175,13 +174,14 @@ reach NETRA directly.
 
 | Command | |
 |---|---|
+| `git pull` then `scripts/local.sh up` | update: `up` moves `be/` and `fe/` to the commits the pull brought, then rebuilds what changed |
 | `scripts/local.sh up` | start or update (rebuilds changed images) |
 | `scripts/local.sh start` | start the images built before, without internet (demo day) |
 | `scripts/local.sh status` | containers and API health |
 | `scripts/local.sh lan` | the Mac's address on every network, for `CC_URL` and phones |
 | `scripts/local.sh ports` | ports NETRA publishes and whether another program holds them |
 | `scripts/local.sh logs [api\|db\|caddy\|...]` | follow logs |
-| `scripts/local.sh doctor` | check Docker, Ollama, model, AI link, LAN reachability, firewall, sleep |
+| `scripts/local.sh doctor` | check Docker, `be/` and `fe/`, Ollama, model, AI link, LAN reachability, firewall, sleep |
 | `scripts/local.sh export [file]` | database, photos and floor plans in one file |
 | `scripts/local.sh import <file>` | replace all data here with an export (asks first) |
 | `scripts/local.sh down` | stop (data is kept) and allow sleep again |
@@ -211,6 +211,8 @@ After editing `.env`: `scripts/local.sh up`.
 
 | Symptom | Fix |
 |---|---|
+| `up` fails at `COPY be/go.mod` or `COPY fe/package.json`: not found | `be/` and `fe/` are empty: `git submodule update --init --recursive` (an older `local.sh` did not fetch them) |
+| `be: building your checkout, not the commit NETRA records` | you work in that submodule, so `up` leaves it alone; `git submodule update -- be` builds the recorded commit |
 | `doctor`: containers cannot reach Ollama | `brew services stop ollama && OLLAMA_HOST=0.0.0.0 ollama serve` |
 | Robot stays offline | on the robot `curl http://<address>/healthz`; no answer: other network, venue Wi-Fi isolating devices, or the macOS firewall (allow Docker); `401` in `logs api`: wrong `CC_TOKEN` |
 | `port … is used by …` at `up` | another stack or program has the port: set `NETRA_LAN_PORT` / `NETRA_TUNNEL_PORT` ([Next to other stacks](#next-to-other-stacks)) |
