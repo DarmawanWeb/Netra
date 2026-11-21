@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # NETRA Fleet on a Mac — robots connect over the same network (Wi-Fi, hotspot or cable).
 #
-#   scripts/local.sh setup             check tools, create .env, start Ollama, pull the AI model
-#   scripts/local.sh up                build and start the stack, print the addresses
+#   scripts/local.sh setup             check tools, fetch be/ and fe/, create .env, pull the AI model
+#   scripts/local.sh up                fetch be/ and fe/, build and start the stack, print the addresses
 #   scripts/local.sh start             start without rebuilding (no internet needed, demo day)
 #   scripts/local.sh robot <id> [name] register a robot and print its /etc/pashupati/pashupati.env
 #   scripts/local.sh lan               addresses robots and phones can use on each network
@@ -180,6 +180,49 @@ awake_running() {
 
 need_env() { [[ -f $ENV_FILE ]] || die "no .env yet: run scripts/local.sh setup"; }
 
+# "flag path" for every submodule: = at the commit NETRA records, + at another one, - not fetched,
+# U with merge conflicts.
+submodule_flags() {
+    git submodule status 2>/dev/null |
+        awk '{ flag = substr($0, 1, 1); split(substr($0, 2), f, " "); print (flag == " " ? "=" : flag), f[2] }'
+}
+
+# A submodule nobody works in: no local changes, detached as git submodule update leaves it, and its
+# commit on a remote branch. Moving it to the recorded commit then loses nothing.
+submodule_pristine() {
+    [[ -z $(git -C "$1" status --porcelain 2>/dev/null) ]] || return 1
+    git -C "$1" symbolic-ref -q HEAD >/dev/null && return 1
+    [[ -n $(git -C "$1" branch -r --contains HEAD 2>/dev/null) ]]
+}
+
+# The image is built from be/ (the service) and fe/ (the dashboard), both submodules. A clone without
+# --recursive leaves them empty and a pull leaves them at the old commits: fetch them before a build.
+# A submodule someone works in (changes, a branch, local commits) is built as it is.
+need_sources() {
+    git rev-parse --git-dir >/dev/null 2>&1 || return 0 # a copy without git: built as it is
+    local flag path fetch='' keep=''
+    while read -r flag path; do
+        case $flag in
+        -) fetch="$fetch $path" ;;
+        +) if submodule_pristine "$path"; then fetch="$fetch $path"; else keep="$keep $path"; fi ;;
+        U) die "$path has merge conflicts: resolve them there first" ;;
+        esac
+    done < <(submodule_flags)
+    if [[ -n $fetch ]]; then
+        warn "fetching$fetch at the commits NETRA records"
+        # shellcheck disable=SC2086 # the paths are be and fe, word splitting wanted
+        git submodule update --init --recursive -- $fetch ||
+            die "could not fetch$fetch: check the internet and GitHub over SSH (ssh -T git@github.com)"
+    fi
+    for path in $keep; do
+        warn "$path: building your checkout, not the commit NETRA records (git submodule update -- $path)"
+    done
+    for path in be fe; do
+        [[ -n $(ls -A "$path" 2>/dev/null) ]] || die "$path/ is empty: git submodule update --init"
+    done
+    ok "be $(git -C be rev-parse --short HEAD), fe $(git -C fe rev-parse --short HEAD)"
+}
+
 ollama_up() { curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; }
 
 start_ollama() {
@@ -226,6 +269,9 @@ cmd_setup() {
     fi
     ok "Ollama $(ollama --version 2>/dev/null | awk '{print $NF}')"
 
+    title "Sources"
+    need_sources
+
     title "Configuration"
     local model
     if [[ $(ram_gb) -ge 16 ]]; then model=qwen2.5vl:7b; else model=qwen2.5vl:3b; fi
@@ -262,6 +308,8 @@ cmd_up() {
     docker info >/dev/null 2>&1 || die "Docker Desktop is not running: open -a Docker"
     check_ports
     start_ollama || warn "Ollama is not running: final detection falls back to the robot result"
+    title "Sources"
+    need_sources
     title "Starting NETRA Fleet (first build takes a few minutes)"
     docker compose up -d --build --remove-orphans
     wait_healthy || die "API not healthy: scripts/local.sh logs api"
@@ -500,6 +548,21 @@ cmd_doctor() {
     mem=$(docker info --format '{{.MemTotal}}' 2>/dev/null) || mem=0
     [[ $mem =~ ^[0-9]+$ ]] || mem=0
     if [[ $((mem / 1073741824)) -ge 4 ]]; then ok "Docker memory $((mem / 1073741824)) GB"; else warn "Docker memory below 4 GB (Settings → Resources)"; fi
+
+    title "Sources"
+    if git rev-parse --git-dir >/dev/null 2>&1; then
+        local flag path
+        while read -r flag path; do
+            case $flag in
+            =) ok "$path at the commit NETRA records ($(git -C "$path" rev-parse --short HEAD))" ;;
+            +) warn "$path at another commit than NETRA records (up fetches it, unless you work there)" ;;
+            -) bad "$path/ not fetched (scripts/local.sh up fetches it)" ;;
+            *) bad "$path has merge conflicts" ;;
+            esac
+        done < <(submodule_flags)
+    else
+        ok "a copy without git: be/ and fe/ are built as they are"
+    fi
 
     title "AI"
     if ollama_up; then ok "Ollama on the Mac"; else bad "Ollama not running (brew services start ollama)"; fi
